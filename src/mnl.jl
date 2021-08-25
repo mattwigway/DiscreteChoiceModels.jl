@@ -21,7 +21,7 @@ end
 function multinomial_logit_log_likelihood(indexed_utility, indexed_choice, avail_mat, params)
     # make the vector the same as the element type of params so ForwardDiff works
     thread_ll = zeros(eltype(params), Threads.nthreads())
-    for obs in 1:length(indexed_choice)
+    Threads.@threads for obs in 1:length(indexed_choice)
         # compute all utilities
         exp_utils = map(enumerate(indexed_utility)) do (i, u)
             if isnothing(avail_mat) || avail_mat[obs, i]
