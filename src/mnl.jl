@@ -58,7 +58,8 @@ function multinomial_logit(
     # typeof([1=>0, 2=>Coef(:base)]) = Pair{Int64, Any}
     utility::AbstractVector{<:Pair{<:Any, <:Any}},
     chosen::AbstractVector{<:Any};
-    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing
+    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing,
+    method=BFGS()
     )
     # accumulate all unique coefs (as they may appear in multiple utility functions)
     # TODO abstract this code out for NL, etc.
@@ -125,7 +126,7 @@ function multinomial_logit(
     indexed_chosen = map(choice -> findfirst(util -> util.first == choice, utility), chosen)
     @assert !any(isnothing.(indexed_chosen))
 
-    @info "Optimizing $(length(unique_coefs_set)) coefficients}"
+    @info "Optimizing $(length(unique_coefs_set)) coefficients"
 
     init_ll = multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
@@ -134,7 +135,7 @@ function multinomial_logit(
     results = optimize(
         obj,
         starting_values,
-        BFGS();  # TODO don't hardwire method
+        method;
         autodiff = :forward  # pure-Julia likelihood function, autodiff for gradient/Hessian
     )
 
