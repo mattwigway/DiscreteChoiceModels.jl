@@ -1,9 +1,11 @@
 using Optim
 using PrettyTables
-using Infiltrator  # for debug
+using ForwardDiff
+using LinearAlgebra
 
 struct MNLResult
     coefs::Dict{String, Float64}
+    ses::Dict{String, Float64}
     init_ll::Float64
     final_ll::Float64
     # TODO log likelihood at constants
@@ -45,7 +47,6 @@ function multinomial_logit_log_likelihood(indexed_utility, indexed_choice, avail
         end
 
         logprob = log(exp_utils[indexed_choice[obs]] / sum(exp_utils))
-        @infiltrate obs == 1
         thread_ll[Threads.threadid()] += logprob
     end
     total_ll = sum(thread_ll)
@@ -129,8 +130,9 @@ function multinomial_logit(
     init_ll = multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
 
+    obj(p) = -multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, p)
     results = optimize(
-        p -> -multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, p),
+        obj,
         starting_values,
         BFGS();  # TODO don't hardwire method
         autodiff = :forward  # pure-Julia likelihood function, autodiff for gradient/Hessian
@@ -148,10 +150,18 @@ function multinomial_logit(
 
     final_ll = -Optim.minimum(results)
     params = Optim.minimizer(results)
-    final_coefs = Dict(map(i -> (coefs[i].name => params[i]), 1:length(coefs)))
 
-    # TODO use autodiff to estimate Hessian and standard errors
-    return MNLResult(final_coefs, init_ll, final_ll)
+    @info "Calculating and inverting Hessian"
+
+    # compute standard errors
+    hess = ForwardDiff.hessian(obj, params)
+    inv_hess = inv(hess)
+    se = sqrt.(diag(inv_hess))
+
+    final_coefs = Dict(map(i -> (coefs[i].name => params[i]), 1:length(coefs)))
+    final_ses = Dict(map(i -> (coefs[i].name => se[i]), 1:length(coefs)))
+
+    return MNLResult(final_coefs, final_ses, init_ll, final_ll)
 end
 
 function summary(res::MNLResult)
@@ -163,7 +173,16 @@ Final log-likelihood: $(res.final_ll)
 McFadden's pseudo-R2 (relative to starting values): $mcfadden
 """
 
-    table = pretty_table(String, res.coefs)
+    table_rows = collect(keys(res.coefs))
+    data = hcat(
+        table_rows,
+        map(c -> res.coefs[c], table_rows),
+        map(c -> res.ses[c], table_rows),
+        map(c -> res.coefs[c] / res.ses[c], table_rows)
+    )
+
+    table = pretty_table(String, data, header=["", "Coef", "Std. Err.", "Z-stat"],
+        header_crayon=crayon"yellow bold", formatters=ft_printf("%.5f", 2:4))
 
     return header * table
 end
