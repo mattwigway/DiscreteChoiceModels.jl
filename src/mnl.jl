@@ -1,5 +1,6 @@
 using Optim
 using PrettyTables
+using Infiltrator  # for debug
 
 struct MNLResult
     coefs::Dict{String, Float64}
@@ -15,36 +16,48 @@ struct InternalCoefVector
     vector::Union{Missing, Vector{Number}}
 end
 
-# TODO availability
-function multinomial_logit_log_likelihood(indexed_utility, indexed_choice, params)
+function multinomial_logit_log_likelihood(indexed_utility, indexed_choice, avail_mat, params)
     # make the vector the same as the element type of params so ForwardDiff works
     thread_ll = zeros(eltype(params), Threads.nthreads())
-    Threads.@threads for obs in 1:length(indexed_choice)
+    for obs in 1:length(indexed_choice)
         # compute all utilities
-        exp_utils = map(indexed_utility) do u
-            util = convert(eltype(params), 0) # for ForwardDiff again
-            for cv in u
-                if ismissing(cv.vector)
-                    # ASC, no vector
-                    util += params[cv.index]
-                else
-                    util += params[cv.index] * cv.vector[obs]
+        exp_utils = map(enumerate(indexed_utility)) do (i, u)
+            if isnothing(avail_mat) || avail_mat[obs, i]
+                util = convert(eltype(params), 0) # for ForwardDiff again
+                # alt is available
+                for cv in u
+                    if ismissing(cv.vector)
+                        # ASC, no vector
+                        util += params[cv.index]
+                    else
+                        util += params[cv.index] * cv.vector[obs]
+                    end
                 end
+                exputil = exp(util)
+                # if !isfinite(exputil)
+                #     error("Infinite value in exp(util)!")
+                # end
+                return exputil
+            else
+                # unavailable is util = -inf, exp(-inf) = 0
+                return convert(eltype(params), 0)
             end
-            return exp(util)
         end
 
         logprob = log(exp_utils[indexed_choice[obs]] / sum(exp_utils))
+        @infiltrate obs == 1
         thread_ll[Threads.threadid()] += logprob
     end
-    return sum(thread_ll)
+    total_ll = sum(thread_ll)
+    return total_ll
 end
 
 function multinomial_logit(
     # Ideally would be Union{<:AbstractVector{CoefVector}, <:Number}}, but
     # typeof([1=>0, 2=>Coef(:base)]) = Pair{Int64, Any}
     utility::AbstractVector{<:Pair{<:Any, <:Any}},
-    chosen::AbstractVector{<:Any}
+    chosen::AbstractVector{<:Any};
+    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing
     )
     # accumulate all unique coefs (as they may appear in multiple utility functions)
     # TODO abstract this code out for NL, etc.
@@ -70,7 +83,7 @@ function multinomial_logit(
 
     # make order concrete
     coefs = [unique_coefs_set...]
-    starting_values::Vector{Float64} = collect(map(c -> c.starting_value, coefs))
+    starting_values::Vector{Float64} = map(c -> c.starting_value, coefs)
 
     # ossify order
     ordered_util = [utility...]
@@ -97,16 +110,27 @@ function multinomial_logit(
         end
     end
 
+    avail_mat = nothing
+    if !isnothing(availability)
+        avail_mat = BitArray(undef, length(chosen), length(availability))
+        for (name, avvec) in availability
+            index = findfirst(u -> u.first == name, ordered_util)
+            @assert !isnothing(index)
+            avail_mat[:, index] = avvec
+        end
+    end
+
+    # inefficient, could cache if becomes slow
     indexed_chosen = map(choice -> findfirst(util -> util.first == choice, utility), chosen)
     @assert !any(isnothing.(indexed_chosen))
 
     @info "Optimizing $(length(unique_coefs_set)) coefficients}"
 
-    init_ll = multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, starting_values)
+    init_ll = multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
 
     results = optimize(
-        p -> -multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, p),
+        p -> -multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, p),
         starting_values,
         BFGS();  # TODO don't hardwire method
         autodiff = :forward  # pure-Julia likelihood function, autodiff for gradient/Hessian

@@ -17,11 +17,11 @@ Coef(name::Symbol, starting_value::Float64) = Coef(string(name), starting_value)
 # squared terms, etc., inline
 struct CoefVector
     coef::Coef
-    vector::Union{Vector{Number}, Missing} # can be missing for ASC
+    vector::Union{Vector{<:Number}, Missing} # can be missing for ASC
 end
 
 # a coef times a vector is a coefvector
-*(coef::Coef, vector::Vector{Float64}) = CoefVector(coef, vector)
+*(coef::Coef, vector::Vector{<:Number}) = CoefVector(coef, vector)
 # This is for the first addition of two coefvectors in a utility function
 +(cv::CoefVector, cv2::CoefVector) = [cv, cv2]
 # this is for additional additions
