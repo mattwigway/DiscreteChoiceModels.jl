@@ -11,13 +11,6 @@ struct MNLResult
     # TODO log likelihood at constants
 end
 
-# like a coefvector, but with an index into the array of parameters
-# rather than a name
-struct InternalCoefVector
-    index::Int64
-    vector::Union{Missing, Vector{Number}}
-end
-
 function multinomial_logit_log_likelihood(indexed_utility, indexed_choice, avail_mat, params)
     # make the vector the same as the element type of params so ForwardDiff works
     thread_ll = zeros(eltype(params), Threads.nthreads())
@@ -61,72 +54,9 @@ function multinomial_logit(
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing,
     method=BFGS()
     )
-    # accumulate all unique coefs (as they may appear in multiple utility functions)
-    # TODO abstract this code out for NL, etc.
-    unique_coefs_set = Set{Coef}()
-    for (uname, util_func) in utility
-        if typeof(util_func) <: AbstractVector{CoefVector}
-            for coefvector in util_func
-                push!(unique_coefs_set, coefvector.coef)
-            end
-        elseif typeof(util_func) <: CoefVector
-            push!(unique_coefs_set, util_func.coef)
-        elseif typeof(util_func) <: Coef
-            push!(unique_coefs_set, util_func)
-        elseif (typeof(util_func) <: Number) && (util_func == 0)
-            # nothing to estimate
-        else
-            error("Utility $uname must contain coefficients or be zero")
-        end
-    end
+    @parseutility
 
-    # TODO add check here to make sure that there aren't coefs with same name and different
-    # starting values
-
-    # make order concrete
-    coefs = [unique_coefs_set...]
-    starting_values::Vector{Float64} = map(c -> c.starting_value, coefs)
-
-    # ossify order
-    ordered_util = [utility...]
-    indexed_utility = map(ordered_util) do (name, util_func)
-        if typeof(util_func) <: AbstractVector{CoefVector}
-            return map(util_func) do cv
-                index = findfirst(c -> c.name == cv.coef.name, coefs)
-                @assert !isnothing(index)
-                return InternalCoefVector(index, cv.vector)
-            end
-        elseif typeof(util_func) <: CoefVector
-            index = findfirst(c -> c.name == util_func.coef.name, coefs)
-            @assert !isnothing(index)
-            return [IndexedCoefVector(index, util_func.vector)]
-        elseif typeof(util_func) <: Coef
-            index = findfirst(c -> c.name == util_func.name, coefs)
-            @assert !isnothing(index)
-            return [IndexedCoefVector(index, missing)]
-        elseif (typeof(util_func) <: Number) && (util_func == 0)
-            return Vector{InternalCoefVector}()
-        else
-            # ugly, should be enforced by type system, see comment above
-            error("Utility function $name must contain coefficients or be zero")
-        end
-    end
-
-    avail_mat = nothing
-    if !isnothing(availability)
-        avail_mat = BitArray(undef, length(chosen), length(availability))
-        for (name, avvec) in availability
-            index = findfirst(u -> u.first == name, ordered_util)
-            @assert !isnothing(index)
-            avail_mat[:, index] = avvec
-        end
-    end
-
-    # inefficient, could cache if becomes slow
-    indexed_chosen = map(choice -> findfirst(util -> util.first == choice, utility), chosen)
-    @assert !any(isnothing.(indexed_chosen))
-
-    @info "Optimizing $(length(unique_coefs_set)) coefficients"
+    @info "Optimizing $(length(coefs)) coefficients"
 
     init_ll = multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
