@@ -13,12 +13,18 @@ struct MNLResult
     # TODO log likelihood at constants
 end
 
-function multinomial_logit_log_likelihood(utility_functions, numbered_chosen, data, params)
+function multinomial_logit_log_likelihood(utility_functions, numbered_chosen, data, availability, params)
     # make the vector the same as the element type of params so ForwardDiff works
     thread_ll = zeros(eltype(params), Threads.nthreads())
-    Threads.@threads for (choice, row) in collect(zip(numbered_chosen, Tables.rows(data)))
-        # compute all utilities
-        exp_utils = map(ufunc -> exp(ufunc(params, row)), utility_functions) 
+    Threads.@threads for (rowidx, choice, row) in collect(zip(1:length(numbered_chosen), numbered_chosen, Tables.rows(data)))
+        exp_utils = map(enumerate(utility_functions)) do (choiceidx, ufunc)
+            if isnothing(availability) || availability[rowidx, choiceidx]
+                return exp(ufunc(params, row))
+            else
+                # unavailable is util = -inf, exp(-inf) = 0
+                return zero(eltype(params))
+            end
+        end
 
         logprob = log(exp_utils[choice] / sum(exp_utils))
         thread_ll[Threads.threadid()] += logprob
@@ -31,17 +37,20 @@ function multinomial_logit(
     utility,
     chosen::AbstractVector{<:Any},
     data;
-    #availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing,
+    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing,
     method=BFGS()
     )
 
     numbered_chosen = getkey.([utility.alt_numbers], chosen, [-1])
     any(numbered_chosen .== -1) && error("not all choices appear in utility functions")
 
-    init_ll = multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, utility.starting_values)
+    # convert availability to a matrix
+    avail_mat = availability_to_matrix(availability, utility.alt_numbers)
+
+    init_ll = multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, utility.starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
 
-    obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, p)
+    obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, p)
     results = optimize(
         obj,
         copy(utility.starting_values),

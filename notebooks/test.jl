@@ -16,13 +16,12 @@ model = multinomial_logit(
         :αswissmetro = 0f  # fix swissmetro ASC to zero 
     end),
     data.CHOICE,
-    data
-    # data,
-    # availability=[
-    #     1 => (data.TRAIN_AV .== 1) .& (data.SP .!= 0),
-    #     2 => data.SM_AV .== 1,
-    #     3 => (data.CAR_AV .== 1) .& (data.SP .!= 0),
-    # ]
+    data,
+    availability=[
+        1 => (data.TRAIN_AV .== 1) .& (data.SP .!= 0),
+        2 => data.SM_AV .== 1,
+        3 => (data.CAR_AV .== 1) .& (data.SP .!= 0),
+    ]
 )
 
 println(DiscreteChoiceModels.summary(model))

@@ -1,5 +1,6 @@
 module DiscreteChoiceModels
 
+include("util.jl")
 include("utilitymacro.jl")
 include("mnl.jl")
 
