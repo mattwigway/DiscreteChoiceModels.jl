@@ -24,7 +24,7 @@ model = multinomial_logit(
         2 ~ :αswissmetro + :βtravel_time * SM_TT / 100 + :βcost * SM_CO * (GA == 0) / 100
         3 ~ :αcar + :βtravel_time * CAR_TT / 100 + :βcost * CAR_CO / 100
 
-        :αswissmetro = 0f  # fix swissmetro ASC to zero 
+        :αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
     end),
     data.CHOICE,
     data,
@@ -48,8 +48,8 @@ Starting values for coefficients can be specified using `=`. For example,
 `:asc_car = 1.3247`
 will start estimation for this coefficient at 1.3247. If a coefficient appears in a utility function specification without a starting value being defined, the starting value will be set to zero.
 
-If a coefficient should be fixed (rather than estimate), this can be specified with an `f` postfix:
-`:asc_car = 0f`
+If a coefficient should be fixed (rather than estimate), this can be specified with a `, fixed` postfix:
+`:asc_car = 0, fixed`
 This is most commonly used with 0 to indicate the left-out ASC, but any value can be fixed for a coefficient.
 
 ## Features

@@ -23,8 +23,8 @@ macro utility(ex::Expr)
     coef_indices = Dict{Symbol, Int64}()
     fixed_coefs = Dict{Symbol, Number}()
     postwalk(ex) do subex
-        if @capture(subex, :coef_ = starting_val_ * f)
-            !(starting_val isa Number) && error("Starting value must be a number, for coef $coef")
+        if @capture(subex, (:coef_ = (starting_val_, fixed)))
+            !(starting_val isa Number) && error("Fixed starting value must be a number, for coef $coef")
             # fixed coefficient
             (haskey(coef_indices, coef) || haskey(fixed_coefs, coef)) && error("Coef $coef defined multiple times")
             fixed_coefs[coef] = starting_val
