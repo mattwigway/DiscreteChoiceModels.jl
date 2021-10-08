@@ -4,7 +4,7 @@ using ForwardDiff
 using LinearAlgebra
 using Tables
 
-struct MNLResult
+struct MultinomialLogitModel <: LogitModel
     coefnames::Vector{Symbol}
     coefs::Vector{Float64}
     ses::Vector{Float64}  # ses missing for fixed params, in future add option to disable se estimation
@@ -83,10 +83,10 @@ function multinomial_logit(
     final_coefs = [params..., values(utility.fixed_coefs)...]
     final_ses = [se..., fill(NaN64, length(utility.fixed_coefs))...]
 
-    return MNLResult(final_coefnames, final_coefs, final_ses, init_ll, final_ll)
+    return MultinomialLogitModel(final_coefnames, final_coefs, final_ses, init_ll, final_ll)
 end
 
-function summary(res::MNLResult)
+function summary(res::MultinomialLogitModel)
     mcfadden = 1 - res.final_ll / res.init_ll
     header = """
 Multinomial logit model
