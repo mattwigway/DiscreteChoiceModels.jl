@@ -30,12 +30,12 @@
         ]
     )
 
-    coefs = Dict(zip(coefnames(model), round.(coef(model), digits=2)))
-    ses = Dict(zip(coefnames(model), round.(stderror(model), digits=4)))
+    coefs = Dict(zip(coefnames(model), round.(coef(model), sigdigits=3)))
+    ses = Dict(zip(coefnames(model), round.(stderror(model), sigdigits=3)))
 
-    @test coefs[:αcar] ≈ -0.15 # biogeme says 0.155 which would round to 0.16, but it's actually 0.1546
+    @test coefs[:αcar] ≈ -0.155 # biogeme says 0.155 which would round to 0.16, but it's actually 0.1546
     @test coefs[:αswissmetro] == 0  # fixed
-    @test coefs[:αtrain] ≈ -0.70
+    @test coefs[:αtrain] ≈ -0.701
     @test coefs[:βcost] ≈ -1.08
     @test coefs[:βtravel_time] ≈ -1.28
 
@@ -44,4 +44,19 @@
     @test ses[:αtrain] ≈ 0.0549
     @test ses[:βcost] ≈ 0.0518
     @test ses[:βtravel_time] ≈ 0.0569
+
+    idx = Dict(zip(coefnames(model), 1:length(coefs)))
+    vcovmat = round.(vcov(model), sigdigits=3)
+    @test vcovmat[idx[:αtrain], idx[:αcar]] ≈ 0.00138
+    @test vcovmat[idx[:βcost], idx[:αcar]] ≈ 0.000485
+    @test vcovmat[idx[:βcost], idx[:αtrain]] ≈ 8.22e-6
+    @test vcovmat[idx[:βtravel_time], idx[:αcar]] ≈ -0.00144
+    @test vcovmat[idx[:βtravel_time], idx[:αtrain]] ≈ -0.00225
+    @test vcovmat[idx[:βtravel_time], idx[:βcost]] ≈ 0.000550
+
+    @test all(isnan.(vcovmat[idx[:αswissmetro], :]))
+    @test all(isnan.(vcovmat[:, idx[:αswissmetro]]))
+
+    @test round(loglikelihood(model), digits=3) ≈ -5331.252
+    @test round(model.init_ll, digits=3) ≈ -6964.663
 end
