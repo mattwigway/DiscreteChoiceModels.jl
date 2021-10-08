@@ -2,44 +2,31 @@ using Optim
 using PrettyTables
 using ForwardDiff
 using LinearAlgebra
+using Tables
 
-struct MNLResult
-    coefs::Dict{String, Float64}
-    ses::Dict{String, Float64}
+struct MultinomialLogitModel <: LogitModel
+    coefnames::Vector{Symbol}
+    coefs::Vector{Float64}
+    vcov::Matrix{Float64}
     init_ll::Float64
     final_ll::Float64
     # TODO log likelihood at constants
 end
 
-function multinomial_logit_log_likelihood(indexed_utility, indexed_choice, avail_mat, params)
+function multinomial_logit_log_likelihood(utility_functions, numbered_chosen, data, availability, params)
     # make the vector the same as the element type of params so ForwardDiff works
     thread_ll = zeros(eltype(params), Threads.nthreads())
-    Threads.@threads for obs in 1:length(indexed_choice)
-        # compute all utilities
-        exp_utils = map(enumerate(indexed_utility)) do (i, u)
-            if isnothing(avail_mat) || avail_mat[obs, i]
-                util = convert(eltype(params), 0) # for ForwardDiff again
-                # alt is available
-                for cv in u
-                    if ismissing(cv.vector)
-                        # ASC, no vector
-                        util += params[cv.index]
-                    else
-                        util += params[cv.index] * cv.vector[obs]
-                    end
-                end
-                exputil = exp(util)
-                # if !isfinite(exputil)
-                #     error("Infinite value in exp(util)!")
-                # end
-                return exputil
+    Threads.@threads for (rowidx, choice, row) in collect(zip(1:length(numbered_chosen), numbered_chosen, Tables.rows(data)))
+        exp_utils = map(enumerate(utility_functions)) do (choiceidx, ufunc)
+            if isnothing(availability) || availability[rowidx, choiceidx]
+                return exp(ufunc(params, row))
             else
                 # unavailable is util = -inf, exp(-inf) = 0
-                return convert(eltype(params), 0)
+                return zero(eltype(params))
             end
         end
 
-        logprob = log(exp_utils[indexed_choice[obs]] / sum(exp_utils))
+        logprob = log(exp_utils[choice] / sum(exp_utils))
         thread_ll[Threads.threadid()] += logprob
     end
     total_ll = sum(thread_ll)
@@ -47,30 +34,32 @@ function multinomial_logit_log_likelihood(indexed_utility, indexed_choice, avail
 end
 
 function multinomial_logit(
-    # Ideally would be Union{<:AbstractVector{CoefVector}, <:Number}}, but
-    # typeof([1=>0, 2=>Coef(:base)]) = Pair{Int64, Any}
-    utility::AbstractVector{<:Pair{<:Any, <:Any}},
-    chosen::AbstractVector{<:Any};
+    utility,
+    chosen::AbstractVector{<:Any},
+    data;
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing,
     method=BFGS()
     )
-    @parseutility
 
-    @info "Optimizing $(length(coefs)) coefficients"
+    numbered_chosen = getkey.([utility.alt_numbers], chosen, [-1])
+    any(numbered_chosen .== -1) && error("not all choices appear in utility functions")
 
-    init_ll = multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, starting_values)
+    # convert availability to a matrix
+    avail_mat = availability_to_matrix(availability, utility.alt_numbers)
+
+    init_ll = multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, utility.starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
 
-    obj(p) = -multinomial_logit_log_likelihood(indexed_utility, indexed_chosen, avail_mat, p)
+    obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, p)
     results = optimize(
         obj,
-        starting_values,
+        copy(utility.starting_values),
         method;
         autodiff = :forward  # pure-Julia likelihood function, autodiff for gradient/Hessian
     )
 
     if !Optim.converged(results)
-        error("Did not converge")
+        throw(ConvergenceException(Optim.iterations(results)))
     end
 
     @info """
@@ -87,15 +76,18 @@ function multinomial_logit(
     # compute standard errors
     hess = ForwardDiff.hessian(obj, params)
     inv_hess = inv(hess)
-    se = sqrt.(diag(inv_hess))
 
-    final_coefs = Dict(map(i -> (coefs[i].name => params[i]), 1:length(coefs)))
-    final_ses = Dict(map(i -> (coefs[i].name => se[i]), 1:length(coefs)))
+    # put any fixed parameters back into the data
+    final_coefnames = [utility.coefnames..., keys(utility.fixed_coefs)...]
+    final_coefs = [params..., values(utility.fixed_coefs)...]
+    vcov = similar(inv_hess, length(final_coefs), length(final_coefs))
+    vcov[:, :] .= convert(eltype(vcov), NaN)
+    vcov[1:length(params), 1:length(params)] = inv_hess
 
-    return MNLResult(final_coefs, final_ses, init_ll, final_ll)
+    return MultinomialLogitModel(final_coefnames, final_coefs, vcov, init_ll, final_ll)
 end
 
-function summary(res::MNLResult)
+function Base.summary(res::MultinomialLogitModel)
     mcfadden = 1 - res.final_ll / res.init_ll
     header = """
 Multinomial logit model
@@ -104,12 +96,11 @@ Final log-likelihood: $(res.final_ll)
 McFadden's pseudo-R2 (relative to starting values): $mcfadden
 """
 
-    table_rows = collect(keys(res.coefs))
     data = hcat(
-        table_rows,
-        map(c -> res.coefs[c], table_rows),
-        map(c -> res.ses[c], table_rows),
-        map(c -> res.coefs[c] / res.ses[c], table_rows)
+        coefnames(res),
+        coef(res),
+        stderror(res),
+        coef(res) ./ stderror(res)
     )
 
     table = pretty_table(String, data, header=["", "Coef", "Std. Err.", "Z-stat"],
@@ -117,3 +108,5 @@ McFadden's pseudo-R2 (relative to starting values): $mcfadden
 
     return header * table
 end
+
+multinomial_logit(NamedTuple) = error("Not enough arguments. Make sure arguments to @utility are enclosed in parens")

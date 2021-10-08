@@ -1,21 +1,22 @@
-using Parquet
+using CSV
 using DataFrames
 using DiscreteChoiceModels
 
-data = DataFrame(read_parquet("../data/swissmetro.parquet"))
+data = CSV.read("../data/biogeme_swissmetro.dat", DataFrame, delim='\t')
 data = data[in.(data.PURPOSE, [Set([1, 3])]) .& (data.CHOICE .!= 0), :]
 
 @assert nrow(data) == 6768
 
 model = multinomial_logit(
-    [  # define utility functions
-        # 1 is train, ASC remains at zero
-        1 => Coef(:train) + Coef(:travel_time) * (data.TRAIN_TT ./ 100) + Coef(:cost) * ((data.TRAIN_CO .* (data.GA .== 0)) ./ 100),
-        # Swissmetro
-        2 => Coef(:travel_time) * (data.SM_TT ./ 100) + Coef(:cost) * ((data.SM_CO .* (data.GA .== 0)) ./ 100),
-        3 => Coef(:car) + Coef(:travel_time) * (data.CAR_TT ./ 100) + Coef(:cost) * (data.CAR_CO ./ 100)
-    ],
+    @utility(begin
+        1 ~ :αtrain + :βtravel_time * TRAIN_TT / 100 + :βcost * (TRAIN_CO * (GA == 0)) / 100
+        2 ~ :αswissmetro + :βtravel_time * SM_TT / 100 + :βcost * SM_CO * (GA == 0) / 100
+        3 ~ :αcar + :βtravel_time * CAR_TT / 100 + :βcost * CAR_CO / 100
+
+        :αswissmetro = 0f  # fix swissmetro ASC to zero 
+    end),
     data.CHOICE,
+    data,
     availability=[
         1 => (data.TRAIN_AV .== 1) .& (data.SP .!= 0),
         2 => data.SM_AV .== 1,
