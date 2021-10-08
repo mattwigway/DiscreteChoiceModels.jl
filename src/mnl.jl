@@ -7,7 +7,7 @@ using Tables
 struct MultinomialLogitModel <: LogitModel
     coefnames::Vector{Symbol}
     coefs::Vector{Float64}
-    ses::Vector{Float64}  # ses missing for fixed params, in future add option to disable se estimation
+    vcov::Matrix{Float64}
     init_ll::Float64
     final_ll::Float64
     # TODO log likelihood at constants
@@ -59,7 +59,7 @@ function multinomial_logit(
     )
 
     if !Optim.converged(results)
-        error("Did not converge")
+        throw(ConvergenceException(Optim.iterations(results)))
     end
 
     @info """
@@ -76,17 +76,18 @@ function multinomial_logit(
     # compute standard errors
     hess = ForwardDiff.hessian(obj, params)
     inv_hess = inv(hess)
-    se = sqrt.(diag(inv_hess))
 
     # put any fixed parameters back into the data
     final_coefnames = [utility.coefnames..., keys(utility.fixed_coefs)...]
     final_coefs = [params..., values(utility.fixed_coefs)...]
-    final_ses = [se..., fill(NaN64, length(utility.fixed_coefs))...]
+    vcov = similar(inv_hess, length(final_coefs), length(final_coefs))
+    vcov[:, :] .= convert(eltype(vcov), NaN)
+    vcov[1:length(params), 1:length(params)] = inv_hess
 
-    return MultinomialLogitModel(final_coefnames, final_coefs, final_ses, init_ll, final_ll)
+    return MultinomialLogitModel(final_coefnames, final_coefs, vcov, init_ll, final_ll)
 end
 
-function summary(res::MultinomialLogitModel)
+function Base.summary(res::MultinomialLogitModel)
     mcfadden = 1 - res.final_ll / res.init_ll
     header = """
 Multinomial logit model
@@ -96,10 +97,10 @@ McFadden's pseudo-R2 (relative to starting values): $mcfadden
 """
 
     data = hcat(
-        res.coefnames,
-        res.coefs,
-        res.ses,
-        res.coefs ./ res.ses
+        coefnames(res),
+        coef(res),
+        stderror(res),
+        coef(res) ./ stderror(res)
     )
 
     table = pretty_table(String, data, header=["", "Coef", "Std. Err.", "Z-stat"],
