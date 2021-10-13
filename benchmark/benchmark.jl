@@ -21,7 +21,7 @@ function benchmark_mnl()
                 2 ~ :αswissmetro + :βtravel_time * SM_TT / 100 + :βcost * SM_CO * (GA == 0) / 100
                 3 ~ :αcar + :βtravel_time * CAR_TT / 100 + :βcost * CAR_CO / 100
     
-                :αswissmetro = 0f  # fix swissmetro ASC to zero 
+                :αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
             end),
             ($data).CHOICE,
             $data,
@@ -41,7 +41,8 @@ function main()
     suite["MNL"] = benchmark_mnl()
     tune!(suite)
     results = run(suite)
-    println(results)
+    # use median runtime as not skewed by initial compilation
+    println(median(results))
 end
 
 main()
