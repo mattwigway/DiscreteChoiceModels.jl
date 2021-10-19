@@ -13,6 +13,10 @@
 
     @test nrow(data) == 6768
 
+    data.avtr = (data.TRAIN_AV .== 1) .& (data.SP .!= 0)
+    data.avsm = data.SM_AV .== 1
+    data.avcar = (data.CAR_AV .== 1) .& (data.SP .!= 0)
+
     model = multinomial_logit(
         @utility(begin
             1 ~ :αtrain + :βtravel_time * TRAIN_TT / 100 + :βcost * (TRAIN_CO * (GA == 0)) / 100
@@ -21,12 +25,12 @@
 
             :αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
         end),
-        data.CHOICE,
+        :CHOICE,
         data,
         availability=[
-            1 => (data.TRAIN_AV .== 1) .& (data.SP .!= 0),
-            2 => data.SM_AV .== 1,
-            3 => (data.CAR_AV .== 1) .& (data.SP .!= 0),
+            1 => :avtr,
+            2 => :avsm,
+            3 => :avcar,
         ]
     )
 

@@ -3,6 +3,7 @@ using PrettyTables
 using ForwardDiff
 using LinearAlgebra
 using Tables
+using DataFrames
 
 struct MultinomialLogitModel <: LogitModel
     coefnames::Vector{Symbol}
@@ -13,12 +14,11 @@ struct MultinomialLogitModel <: LogitModel
     # TODO log likelihood at constants
 end
 
-function multinomial_logit_log_likelihood(utility_functions, numbered_chosen, data, availability, params)
-    # make the vector the same as the element type of params so ForwardDiff works
-    thread_ll = zeros(eltype(params), Threads.nthreads())
-    Threads.@threads for (rowidx, choice, row) in collect(zip(1:length(numbered_chosen), numbered_chosen, Tables.rows(data)))
+function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters)
+    return rowwise_loglik(data, parameters) do row, params
         exp_utils = map(enumerate(utility_functions)) do (choiceidx, ufunc)
-            if isnothing(availability) || availability[rowidx, choiceidx]
+            if isnothing(avail_cols) || row[avail_cols[choiceidx]]
+                # choice is available, either implicitly or explicitly
                 return exp(ufunc(params, row))
             else
                 # unavailable is util = -inf, exp(-inf) = 0
@@ -26,31 +26,25 @@ function multinomial_logit_log_likelihood(utility_functions, numbered_chosen, da
             end
         end
 
-        logprob = log(exp_utils[choice] / sum(exp_utils))
-        thread_ll[Threads.threadid()] += logprob
+        logprob = log(exp_utils[row[chosen_col]] / sum(exp_utils))
+        return logprob
     end
-    total_ll = sum(thread_ll)
-    return total_ll
 end
 
 function multinomial_logit(
     utility,
-    chosen::AbstractVector{<:Any},
+    chosen,
     data;
-    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing,
+    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
     method=BFGS()
     )
 
-    numbered_chosen = getkey.([utility.alt_numbers], chosen, [-1])
-    any(numbered_chosen .== -1) && error("not all choices appear in utility functions")
+    data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
 
-    # convert availability to a matrix
-    avail_mat = availability_to_matrix(availability, utility.alt_numbers)
-
-    init_ll = multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, utility.starting_values)
+    init_ll = multinomial_logit_log_likelihood(utility.utility_functions, choice_col, avail_cols, data, utility.starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
 
-    obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, p)
+    obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, choice_col, avail_cols, data, p)
     results = optimize(
         obj,
         copy(utility.starting_values),
