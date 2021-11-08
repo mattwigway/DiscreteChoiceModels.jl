@@ -9,14 +9,18 @@ Support is planned for:
 - Nested logit
 - Mixed logit
 
-The package allows specifying discrete choice models using an intuitive, expressive syntax. For instance, the following code reproduces [Biogeme's multinomial logit model](https://biogeme.epfl.ch/examples/swissmetro/01logit.html) in 24 lines of code, vs. 65 for the Biogeme example:
+The package allows specifying discrete choice models using an intuitive, expressive syntax. For instance, the following code reproduces [Biogeme's multinomial logit model](https://biogeme.epfl.ch/examples/swissmetro/01logit.html) in 28 lines of code, vs. 65 for the Biogeme example:
 
 ```julia
 using DiscreteChoiceModels, CSV, DataFrames
 
-# read and filter data
+# read and filter data, and create binary availability columns
 data = CSV.read("swissmetro.dat", DataFrame, delim='\t')
 data = data[in.(data.PURPOSE, [Set([1, 3])]) .& (data.CHOICE .!= 0), :]
+
+data.avtr = (data.TRAIN_AV .== 1) .& (data.SP .!= 0)
+data.avsm = data.SM_AV .== 1
+data.avcar = (data.CAR_AV .== 1) .& (data.SP .!= 0)
 
 model = multinomial_logit(
     @utility(begin
@@ -26,12 +30,12 @@ model = multinomial_logit(
 
         :αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
     end),
-    data.CHOICE,
+    :CHOICE,
     data,
     availability=[
-        1 => (data.TRAIN_AV .== 1) .& (data.SP .!= 0),
-        2 => data.SM_AV .== 1,
-        3 => (data.CAR_AV .== 1) .& (data.SP .!= 0),
+        1 => :avtr,
+        2 => :avsm,
+        3 => :avcar
     ]
 )
 
@@ -48,7 +52,7 @@ Starting values for coefficients can be specified using `=`. For example,
 `:asc_car = 1.3247`
 will start estimation for this coefficient at 1.3247. If a coefficient appears in a utility function specification without a starting value being defined, the starting value will be set to zero.
 
-If a coefficient should be fixed (rather than estimate), this can be specified with a `, fixed` postfix:
+If a coefficient should be fixed (rather than estimated), this can be specified with a `, fixed` postfix:
 `:asc_car = 0, fixed`
 This is most commonly used with 0 to indicate the left-out ASC, but any value can be fixed for a coefficient.
 
