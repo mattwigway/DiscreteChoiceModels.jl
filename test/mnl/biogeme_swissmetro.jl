@@ -19,11 +19,11 @@
 
     model = multinomial_logit(
         @utility(begin
-            1 ~ :αtrain + :βtravel_time * TRAIN_TT / 100 + :βcost * (TRAIN_CO * (GA == 0)) / 100
-            2 ~ :αswissmetro + :βtravel_time * SM_TT / 100 + :βcost * SM_CO * (GA == 0) / 100
-            3 ~ :αcar + :βtravel_time * CAR_TT / 100 + :βcost * CAR_CO / 100
+            1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
+            2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
+            3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
 
-            :αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
+            αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
         end),
         :CHOICE,
         data,
