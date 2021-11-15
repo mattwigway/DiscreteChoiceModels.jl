@@ -2,10 +2,6 @@
 Functions to compute likelihood based on DataFrames or JuliaDB tables
 =#
 
-using Tables
-using JuliaDB, JuliaDBMeta
-using Printf
-
 # find a prefix that is not used by any columns in the table by appending
 # numbers to prefix
 # TODO should work on all tables, not just dataframes
@@ -80,12 +76,7 @@ function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, 
     # TODO probably don't need an Int64 here
     # Constructing NamedTuple manually since the field names are determined at runtime
     output_table = @transform table NamedTuple{(choice_col,), Tuple{Int64}}((alt_numbers[cols(chosen)],))
-    n_unmatched = reduce(output_table) do x, y
-        yneg = y == -1 ? 1 : 0
-        return (x isa Integer) ? x + yneg : (x == -1 ? 1 : 0) + yneg
-    end
-
-    n_unmatched > 0 && error("not all alternatives appear in utility functions")
+    reduce(min, output_table; select=(choice_col => Int64)) < 0 && error("not all alternatives appear in utility functions")
 
     avail_cols = index_availability(availability, alt_numbers)
     return output_table, choice_col, avail_cols
@@ -111,6 +102,7 @@ function rowwise_loglik(loglik_for_row::Function, table::JuliaDB.AbstractIndexed
     # TODO ensure enclosure here is type-stable
     reducer(x::T, y::NamedTuple) = x + loglik_for_row(y, params)
     reducer(x::NamedTuple, y::NamedTuple) = loglik_for_row(x, params) + loglik_for_row(y, params)
+    reducer(x::T, y::T) = x + y
 
     return reduce(reducer, table)
 end
