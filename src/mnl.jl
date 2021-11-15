@@ -36,7 +36,8 @@ function multinomial_logit(
     chosen,
     data;
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
-    method=BFGS()
+    method=BFGS(),
+    se=true
     )
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
@@ -65,18 +66,33 @@ function multinomial_logit(
     final_ll = -Optim.minimum(results)
     params = Optim.minimizer(results)
 
-    @info "Calculating and inverting Hessian"
-
-    # compute standard errors
-    hess = ForwardDiff.hessian(obj, params)
-    inv_hess = inv(hess)
-
     # put any fixed parameters back into the data
     final_coefnames = [utility.coefnames..., keys(utility.fixed_coefs)...]
     final_coefs = [params..., values(utility.fixed_coefs)...]
-    vcov = similar(inv_hess, length(final_coefs), length(final_coefs))
-    vcov[:, :] .= convert(eltype(vcov), NaN)
-    vcov[1:length(params), 1:length(params)] = inv_hess
+
+    if se
+        @info "Calculating and inverting Hessian"
+
+        # compute standard errors
+        hess = ForwardDiff.hessian(obj, params)
+        local inv_hess
+        try
+            inv_hess = inv(hess)
+        catch LinearAlgebra.SingularException e
+            @warn "Hessian is singular. Not reporting standard errors, and you should probably be suspicious of point estimates."
+            se = false
+        end
+
+        if se
+            vcov = similar(inv_hess, length(final_coefs), length(final_coefs))
+            vcov[:, :] .= convert(eltype(vcov), NaN)
+            vcov[1:length(params), 1:length(params)] = inv_hess
+        end
+    end
+
+    if !se
+        vcov = fill(NaN, length(final_coefs), length(final_coefs))
+    end
 
     return MultinomialLogitModel(final_coefnames, final_coefs, vcov, init_ll, final_ll)
 end
