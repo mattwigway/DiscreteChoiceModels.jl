@@ -78,7 +78,8 @@ function multinomial_logit(
         local inv_hess
         try
             inv_hess = inv(hess)
-        catch LinearAlgebra.SingularException e
+        catch e
+            !(e isa LinearAlgebra.SingularException) && rethrow()
             @warn "Hessian is singular. Not reporting standard errors, and you should probably be suspicious of point estimates."
             se = false
         end
