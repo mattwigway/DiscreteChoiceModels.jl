@@ -52,6 +52,7 @@ macro utility(ex::Expr)
     # now find all utility functions, and number alternatives
     util_funcs = Vector{Expr}()
     alt_numbers = Dict{Any, Int64}()
+    columns = Set{Any}()
     postwalk(ex) do subex
         if @capture(subex, lhs_ ~ rhs_)
             # turn the right hand side into a function of the params
@@ -79,6 +80,7 @@ macro utility(ex::Expr)
                         return x
                     else
                         # convert bare values to data values
+                        push!(columns, x)
                         return :(row.$x)
                     end
                 else
@@ -103,7 +105,8 @@ macro utility(ex::Expr)
             starting_values = $starting_values,
             fixed_coefs = $fixed_coefs,
             utility_functions = [$(util_funcs...)],
-            alt_numbers = $alt_numbers
+            alt_numbers = $alt_numbers,
+            columnnames=$columns
         )
     end
 end

@@ -40,6 +40,10 @@ function multinomial_logit(
     se=true
     )
 
+    if data isa JuliaDB.AbstractIndexedTable
+        check_perfect_prediction(data, chosen, [utility.columnnames...])
+    end
+
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
 
     init_ll = multinomial_logit_log_likelihood(utility.utility_functions, choice_col, avail_cols, data, utility.starting_values)
@@ -47,10 +51,10 @@ function multinomial_logit(
 
     obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, choice_col, avail_cols, data, p)
     results = optimize(
-        obj,
+        TwiceDifferentiable(obj, copy(utility.starting_values), autodiff=:forward),
         copy(utility.starting_values),
-        method;
-        autodiff = :forward  # pure-Julia likelihood function, autodiff for gradient/Hessian
+        method,
+        Optim.Options(show_trace=true)
     )
 
     if !Optim.converged(results)

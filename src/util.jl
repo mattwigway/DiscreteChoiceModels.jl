@@ -53,25 +53,56 @@ function check_perfect_prediction(table::JuliaDB.AbstractIndexedTable, choice, p
     for column in predictors
         ct = coltype(table, column)
         for (i, chc) in enumerate(unique_choice)
-            minmax = groupreduce(Extrema(ct), table, choice => x -> x == chc; select=column) |>
-                collect |>
-                DataFrame
+            if ct == Bool
+                if value(reduce(Sum(Int64), table; select=column)) == 0
+                    @error "Column $column has no true values"
+                else
+                    sums = groupreduce(Series(Sum(Int64), Counter(Int64)), table, choice => x -> x == chc; select=column) |>
+                    collect |>
+                    DataFrame
+        
+                    sum_true = value(sums[sums[:,choice], :Series][1])[1]
+                    count_true = value(sums[sums[:,choice], :Series][1])[2]
+                    sum_false = value(sums[.!sums[:,choice], :Series][1])[1]
+                    count_false = value(sums[.!sums[:,choice], :Series][1])[2]
+        
+                    if sum_true == 0
+                        @error "Column $column == true implies $chc not selected"
+                        problems_found = true
+                    elseif sum_true == count_true
+                        @error "Column $column == true implies $chc always selected"
+                        problems_found = true
+                    end
+                    if sum_false == 0
+                        @error "Column $column == false implies $chc not selected"
+                        problems_found = true
 
-            minmax_true = minmax[minmax[:,choice], :Extrema][1]
-            minmax_false = minmax[.!minmax[:,choice], :Extrema][1]
+                    elseif sum_false == count_false
+                        @error "Column $column == false implies $chc always selected"
+                        problems_found = true
+                    end
+                end
+            else
+                minmax = groupreduce(Extrema(ct), table, choice => x -> x == chc; select=column) |>
+                    collect |>
+                    DataFrame
 
-            if nobs(minmax_true) == 0
-                @warn "Choice $chc not selected"
-                problems_found = true
-            elseif nobs(minmax_false) == 0
-                @warn "Choice $chc always selected"
-                problems_found = true
-            elseif minimum(minmax_true) > maximum(minmax_false)
-                @warn "Column $column > $(maximum(minmax_false)) perfectly predicts $choice == $chc"
-                problems_found = true
-            elseif maximum(minmax_true) < minimum(minmax_false)
-                @warn "Column $column < $(minimum(minmax_false)) perfectly predicts $choice == $chc"
-                problems_found = true
+                minmax_true = minmax[minmax[:,choice], :Extrema][1]
+                minmax_false = minmax[.!minmax[:,choice], :Extrema][1]
+
+                if nobs(minmax_true) == 0
+                    @error "Choice $chc not selected"
+                    problems_found = true
+                elseif nobs(minmax_false) == 0
+                    @error "Choice $chc always selected"
+                    problems_found = true
+                elseif minimum(minmax_true) > maximum(minmax_false)
+                    @error "Column $column > $(maximum(minmax_false)) perfectly predicts $choice == $chc"
+                    problems_found = true
+                elseif maximum(minmax_true) < minimum(minmax_false)
+                    @error "Column $column < $(minimum(minmax_false)) perfectly predicts $choice == $chc"
+                    problems_found = true
+                end
             end
         end
 
