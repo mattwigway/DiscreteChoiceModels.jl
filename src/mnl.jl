@@ -37,7 +37,8 @@ function multinomial_logit(
     data;
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
     method=BFGS(),
-    se=true
+    se=true,
+    verbose=:no
     )
 
     if data isa JuliaDB.AbstractIndexedTable
@@ -54,7 +55,7 @@ function multinomial_logit(
         TwiceDifferentiable(obj, copy(utility.starting_values), autodiff=:forward),
         copy(utility.starting_values),
         method,
-        Optim.Options(show_trace=true)
+        Optim.Options(show_trace=verbose == :medium || verbose == :high)
     )
 
     if !Optim.converged(results)
