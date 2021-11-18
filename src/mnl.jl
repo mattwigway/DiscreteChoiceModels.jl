@@ -16,18 +16,27 @@ end
 
 function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters)
     return rowwise_loglik(data, parameters) do row, params
-        exp_utils = map(enumerate(utility_functions)) do (choiceidx, ufunc)
-            if isnothing(avail_cols) || row[avail_cols[choiceidx]]
+        T = eltype(params)
+        n_ufunc = length(utility_functions)
+        util_sum = zero(T)
+
+        chosen = row[chosen_col]
+        local chosen_exputil
+        for choiceidx in 1:n_ufunc
+            exp_util = if isnothing(avail_cols) || row[avail_cols[choiceidx]]
                 # choice is available, either implicitly or explicitly
-                return exp(ufunc(params, row))
+                @inbounds exp(utility_functions[choiceidx](params, row))
             else
-                # unavailable is util = -inf, exp(-inf) = 0
-                return zero(eltype(params))
+                zero(T)
             end
+
+            if choiceidx == chosen
+                chosen_exputil = exp_util
+            end
+            util_sum += exp_util
         end
 
-        logprob = log(exp_utils[row[chosen_col]] / sum(exp_utils))
-        return logprob
+        log(chosen_exputil / util_sum)
     end
 end
 
