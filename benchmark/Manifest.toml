@@ -155,7 +155,7 @@ uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
 version = "1.4.0"
 
 [[DiscreteChoiceModels]]
-deps = ["BenchmarkTools", "DataFrames", "DataFramesMeta", "ForwardDiff", "IndexedTables", "JuliaDB", "JuliaDBMeta", "LinearAlgebra", "MacroTools", "OnlineStats", "Optim", "PrettyTables", "Printf", "Revise", "Statistics", "StatsBase", "Tables"]
+deps = ["BenchmarkTools", "DataFrames", "DataFramesMeta", "ForwardDiff", "IndexedTables", "JuliaDB", "JuliaDBMeta", "LinearAlgebra", "MacroTools", "OnlineStats", "Optim", "PrettyTables", "Printf", "Revise", "StaticArrays", "Statistics", "StatsBase", "Tables"]
 path = ".."
 uuid = "c2e53169-916a-425c-bc99-aa016d67d968"
 version = "0.0.1"

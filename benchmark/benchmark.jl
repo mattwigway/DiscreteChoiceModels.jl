@@ -81,8 +81,8 @@ end
 function main()
     Logging.disable_logging(Logging.Info)
     suite = BenchmarkGroup()
-    suite["MNL_DataFrame"] = benchmark_mnl()
     suite["MNL_JuliaDB"] = benchmark_mnl_juliadb()
+    suite["MNL_DataFrame"] = benchmark_mnl()
     tune!(suite)
     results = run(suite)
     # use median runtime as not skewed by initial compilation
