@@ -3,6 +3,7 @@ using PrettyTables
 using ForwardDiff
 using LinearAlgebra
 using Tables
+using DataFrames
 
 struct MultinomialLogitModel <: LogitModel
     coefnames::Vector{Symbol}
@@ -13,49 +14,57 @@ struct MultinomialLogitModel <: LogitModel
     # TODO log likelihood at constants
 end
 
-function multinomial_logit_log_likelihood(utility_functions, numbered_chosen, data, availability, params)
-    # make the vector the same as the element type of params so ForwardDiff works
-    thread_ll = zeros(eltype(params), Threads.nthreads())
-    Threads.@threads for (rowidx, choice, row) in collect(zip(1:length(numbered_chosen), numbered_chosen, Tables.rows(data)))
-        exp_utils = map(enumerate(utility_functions)) do (choiceidx, ufunc)
-            if isnothing(availability) || availability[rowidx, choiceidx]
-                return exp(ufunc(params, row))
+function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters)
+    return rowwise_loglik(data, parameters) do row, params
+        T = eltype(params)
+        n_ufunc = length(utility_functions)
+        util_sum = zero(T)
+
+        chosen = row[chosen_col]
+        local chosen_exputil
+        for choiceidx in 1:n_ufunc
+            exp_util = if isnothing(avail_cols) || row[avail_cols[choiceidx]]
+                # choice is available, either implicitly or explicitly
+                @inbounds exp(utility_functions[choiceidx](params, row))
             else
-                # unavailable is util = -inf, exp(-inf) = 0
-                return zero(eltype(params))
+                zero(T)
             end
+
+            if choiceidx == chosen
+                chosen_exputil = exp_util
+            end
+            util_sum += exp_util
         end
 
-        logprob = log(exp_utils[choice] / sum(exp_utils))
-        thread_ll[Threads.threadid()] += logprob
+        log(chosen_exputil / util_sum)
     end
-    total_ll = sum(thread_ll)
-    return total_ll
 end
 
 function multinomial_logit(
     utility,
-    chosen::AbstractVector{<:Any},
+    chosen,
     data;
-    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:AbstractVector{Bool}}}}=nothing,
-    method=BFGS()
+    availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
+    method=BFGS(),
+    se=true,
+    verbose=:no
     )
 
-    numbered_chosen = getkey.([utility.alt_numbers], chosen, [-1])
-    any(numbered_chosen .== -1) && error("not all choices appear in utility functions")
+    if data isa JuliaDB.AbstractIndexedTable
+        check_perfect_prediction(data, chosen, [utility.columnnames...])
+    end
 
-    # convert availability to a matrix
-    avail_mat = availability_to_matrix(availability, utility.alt_numbers)
+    data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
 
-    init_ll = multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, utility.starting_values)
+    init_ll = multinomial_logit_log_likelihood(utility.utility_functions, choice_col, avail_cols, data, utility.starting_values)
     @info "Log-likelihood at starting values $(init_ll)"
 
-    obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, numbered_chosen, data, avail_mat, p)
+    obj(p) = -multinomial_logit_log_likelihood(utility.utility_functions, choice_col, avail_cols, data, p)
     results = optimize(
-        obj,
+        TwiceDifferentiable(obj, copy(utility.starting_values), autodiff=:forward),
         copy(utility.starting_values),
-        method;
-        autodiff = :forward  # pure-Julia likelihood function, autodiff for gradient/Hessian
+        method,
+        Optim.Options(show_trace=verbose == :medium || verbose == :high)
     )
 
     if !Optim.converged(results)
@@ -71,18 +80,34 @@ function multinomial_logit(
     final_ll = -Optim.minimum(results)
     params = Optim.minimizer(results)
 
-    @info "Calculating and inverting Hessian"
-
-    # compute standard errors
-    hess = ForwardDiff.hessian(obj, params)
-    inv_hess = inv(hess)
-
     # put any fixed parameters back into the data
     final_coefnames = [utility.coefnames..., keys(utility.fixed_coefs)...]
     final_coefs = [params..., values(utility.fixed_coefs)...]
-    vcov = similar(inv_hess, length(final_coefs), length(final_coefs))
-    vcov[:, :] .= convert(eltype(vcov), NaN)
-    vcov[1:length(params), 1:length(params)] = inv_hess
+
+    if se
+        @info "Calculating and inverting Hessian"
+
+        # compute standard errors
+        hess = ForwardDiff.hessian(obj, params)
+        local inv_hess
+        try
+            inv_hess = inv(hess)
+        catch e
+            !(e isa LinearAlgebra.SingularException) && rethrow()
+            @warn "Hessian is singular. Not reporting standard errors, and you should probably be suspicious of point estimates."
+            se = false
+        end
+
+        if se
+            vcov = similar(inv_hess, length(final_coefs), length(final_coefs))
+            vcov[:, :] .= convert(eltype(vcov), NaN)
+            vcov[1:length(params), 1:length(params)] = inv_hess
+        end
+    end
+
+    if !se
+        vcov = fill(NaN, length(final_coefs), length(final_coefs))
+    end
 
     return MultinomialLogitModel(final_coefnames, final_coefs, vcov, init_ll, final_ll)
 end

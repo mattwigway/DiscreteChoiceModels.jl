@@ -4,6 +4,10 @@ using MacroTools: postwalk, @capture
 # symbols that should not be interpreted as variable names - must be a better way to do this
 const RESERVED_SYMBOLS = Set([:+, :*, :/, :-, :^, :(==), :(!=), :<, :>, :(<=), :(>=), :≤, :≥])
 
+iscoef(coef::Symbol) = startswith(String(coef), r"[βα]")
+getcoef(coef::QuoteNode) = getcoef(coef.value)
+getcoef(coef::Symbol) = iscoef(coef) ? coef : error("unable to parse coef $coef")
+
 #=
 define a utility function like so:
     @utility begin
@@ -16,6 +20,9 @@ Symbols are treated as coefficients. Starting values for coefficients are define
 Coefficients that are not defined will be treated as estimated with a starting value of 0
 =#
 macro utility(ex::Expr)
+    # inner macros are not parsed first, so expand all of them (e.g. @β)
+    ex = macroexpand(Main, ex)
+
     # first, extract coefficient definitions
     # turn coefs into a vector, reference them by integer values
     coefnames = Vector{Symbol}()
@@ -23,12 +30,14 @@ macro utility(ex::Expr)
     coef_indices = Dict{Symbol, Int64}()
     fixed_coefs = Dict{Symbol, Number}()
     postwalk(ex) do subex
-        if @capture(subex, (:coef_ = (starting_val_, fixed)))
+        if @capture(subex, (coefnode_ = (starting_val_, fixed)))
+            coef = getcoef(coefnode)
             !(starting_val isa Number) && error("Fixed starting value must be a number, for coef $coef")
             # fixed coefficient
             (haskey(coef_indices, coef) || haskey(fixed_coefs, coef)) && error("Coef $coef defined multiple times")
             fixed_coefs[coef] = starting_val
-        elseif @capture(subex, :coef_ = starting_val_)
+        elseif @capture(subex, coefnode_ = starting_val_)
+            coef = getcoef(coefnode)
             !(starting_val isa Number) && error("Starting value must be a number, for coef $coef")
             # non-fixed coefficient
             (haskey(coef_indices, coef) || haskey(fixed_coefs, coef)) && error("Coef $coef defined multiple times")
@@ -43,29 +52,37 @@ macro utility(ex::Expr)
     # now find all utility functions, and number alternatives
     util_funcs = Vector{Expr}()
     alt_numbers = Dict{Any, Int64}()
+    columns = Set{Any}()
     postwalk(ex) do subex
         if @capture(subex, lhs_ ~ rhs_)
             # turn the right hand side into a function of the params
             parsed_rhs = postwalk(rhs) do x
-                if @capture(x, :coef_)
-                    # convert :coef to coefs - either references into the params array for
-                    # non-fixed coefs, or literal values for fixed coefs
-                    if haskey(fixed_coefs, coef)
-                        # interpolate in literal value
-                        return :($(fixed_coefs[coef]))
-                    elseif haskey(coef_indices, coef)
-                        # interpolate in reference into params array
-                        return :(params[$(coef_indices[coef])])
+                if x isa Symbol
+                    if iscoef(x)
+                        # convert :coef to coefs - either references into the params array for
+                        # non-fixed coefs, or literal values for fixed coefs
+                        if haskey(fixed_coefs, x)
+                            # interpolate in literal value
+                            return :($(fixed_coefs[x]))
+                        elseif haskey(coef_indices, x)
+                            # interpolate in reference into params array
+                            return :(params[$(coef_indices[x])])
+                        else
+                            # coef not specifically defined, create it implicitly with starting value 0
+                            push!(coefnames, x)
+                            push!(starting_values, zero(Float64))
+                            coef_indices[x] = length(coefnames)
+                            return :(params[$(length(coefnames))])
+                        end
+                    elseif Base.isoperator(x)
+                        # TODO would be useful to also allow things like trig functions here. Maybe we need
+                        # something like I(...) like they have in R.
+                        return x
                     else
-                        # coef not specifically defined, create it implicitly with starting value 0
-                        push!(coefnames, coef)
-                        push!(starting_values, zero(Float64))
-                        coef_indices[coef] = length(coefnames)
-                        return :(params[$(length(coefnames))])
+                        # convert bare values to data values
+                        push!(columns, x)
+                        return :(row.$x)
                     end
-                elseif (x isa Symbol) && !in(x, RESERVED_SYMBOLS)
-                    # convert bare values to data values
-                    return :(row.$x)
                 else
                     return x
                 end
@@ -88,7 +105,48 @@ macro utility(ex::Expr)
             starting_values = $starting_values,
             fixed_coefs = $fixed_coefs,
             utility_functions = [$(util_funcs...)],
-            alt_numbers = $alt_numbers
+            alt_numbers = $alt_numbers,
+            columnnames=$columns
         )
     end
+end
+
+"""
+Create betas for all of the names in the vector
+"""
+macro β(outcomenode, variablenode, includealpha=false)
+    outcomes = eval(outcomenode)
+    vars = eval(variablenode)
+    
+    res = Vector{Expr}()
+    for outcome in outcomes
+        full, short = if outcome isa Pair
+            outcome[1], outcome[2]
+        else
+            outcome, outcome
+        end
+
+        expressions = map(vars) do varn
+            β = (Symbol("β$(short)_$varn"))
+            x = Symbol(varn)
+            :($β * $x)
+        end
+
+        if includealpha
+            expressions = convert(Vector{Union{Expr, Symbol}}, expressions)
+            pushfirst!(expressions, Symbol("α$short"))
+        end
+
+        rhs = if length(expressions) == 0
+            quote end
+        elseif length(expressions) == 1
+            expressions[1]
+        else
+            Expr(:call, :+, expressions...)
+        end
+
+        push!(res, :($full ~ $rhs))
+    end
+
+    return esc(quote $(res...) end)
 end

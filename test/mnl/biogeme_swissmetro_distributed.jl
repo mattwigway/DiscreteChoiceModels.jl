@@ -1,21 +1,41 @@
 # Replicate the Biogeme Swissmetro example
 # https://biogeme.epfl.ch/examples/swissmetro/01logit.html
 
-@testset "Biogeme swissmetro" begin
-    using CSV
-    using DataFrames
+using Distributed
+procs = addprocs(4)
+Distributed.@everywhere begin
+    using Pkg; Pkg.activate(@__DIR__)
+    Pkg.instantiate(); Pkg.precompile()
+    using JuliaDB, JuliaDBMeta, DiscreteChoiceModels
+end
+
+@testset "Biogeme swissmetro distributed" begin
+    using JuliaDB, JuliaDBMeta
     using DiscreteChoiceModels
     using Test
     using StatsBase
 
-    data = CSV.File(joinpath(dirname(Base.source_path()), "../data/biogeme_swissmetro.dat"), delim='\t') |> DataFrame
-    data = data[in.(data.PURPOSE, [Set([1, 3])]) .& (data.CHOICE .!= 0), :]
+    @test length(workers()) == 4
 
-    @test nrow(data) == 6768
+    data = loadtable(joinpath(dirname(Base.source_path()), "../data/biogeme_swissmetro.dat"),
+        distributed=true, chunks=4, delim='\t')
 
-    data.avtr = (data.TRAIN_AV .== 1) .& (data.SP .!= 0)
-    data.avsm = data.SM_AV .== 1
-    data.avcar = (data.CAR_AV .== 1) .& (data.SP .!= 0)
+    rechunk(data; chunks=4)
+    # TODO this is still not rechunking
+    #@test length(data.chunks) == 4
+
+    # filter to wanted cases
+    data = filter(data) do row
+        ((row.PURPOSE == 1) | (row.PURPOSE == 3)) && row.CHOICE != 0
+    end
+
+    @test length(data) == 6768
+
+    data = @transform data (
+        avtr=(:TRAIN_AV == 1) && (:SP != 0),
+        avsm=:SM_AV == 1,
+        avcar=(:CAR_AV == 1) && (:SP != 0)
+    )
 
     model = multinomial_logit(
         @utility(begin
@@ -64,3 +84,6 @@
     @test round(loglikelihood(model), digits=3) ≈ -5331.252
     @test round(model.init_ll, digits=3) ≈ -6964.663
 end
+
+# clean up
+rmprocs(procs)
