@@ -20,10 +20,10 @@ function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_c
         n_ufunc = length(utility_functions)
         util_sum = zero(T)
 
-        chosen = row[chosen_col]
-        local chosen_exputil
+        chosen::Int64 = @inbounds row[chosen_col]
+        local chosen_exputil::T
         for choiceidx in 1:n_ufunc
-            exp_util = if isnothing(avail_cols) || row[avail_cols[choiceidx]]
+            exp_util = if isnothing(avail_cols) || @inbounds row[avail_cols[choiceidx]]
                 # choice is available, either implicitly or explicitly
                 @inbounds exp(utility_functions[choiceidx](params, row))
             else
