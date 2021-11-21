@@ -81,11 +81,11 @@ function multinomial_logit(
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
     avail_cols_val = tuple(Val.(avail_cols)...)
 
-    @info "Log-likelihood at starting values $(init_ll)"
-
     row_type = rowtype(data)
     obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(wrap_utility_functions(T, row_type, utility.utility_functions), Val(choice_col), avail_cols_val, data, p)
     init_ll = -obj(utility.starting_values)
+
+    @info "Log-likelihood at starting values $(init_ll)"
 
     results = optimize(
         TwiceDifferentiable(obj, copy(utility.starting_values), autodiff=:forward),
