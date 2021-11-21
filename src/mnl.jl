@@ -73,7 +73,7 @@ function multinomial_logit(
     chosen,
     data;
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
-    method=BFGS(),
+    method=NewtonTrustRegion(),
     se=true,
     verbose=:no
     )
@@ -83,7 +83,7 @@ function multinomial_logit(
     end
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
-    avail_cols_val = tuple(Val.(avail_cols)...)
+    avail_cols_val = isnothing(avail_cols) ? nothing : tuple(Val.(avail_cols)...)
 
     row_type = rowtype(data)
     obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(wrap_utility_functions(T, row_type, utility.utility_functions), Val(choice_col), avail_cols_val, data, p)
@@ -95,7 +95,7 @@ function multinomial_logit(
         TwiceDifferentiable(obj, copy(utility.starting_values), autodiff=:forward),
         copy(utility.starting_values),
         method,
-        Optim.Options(show_trace=verbose == :medium || verbose == :high)
+        Optim.Options(show_trace=verbose == :medium || verbose == :high, extended_trace=verbose == :high)
     )
 
     if !Optim.converged(results)

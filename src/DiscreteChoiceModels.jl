@@ -9,6 +9,6 @@ include("utilitymacro.jl")
 include("mnl.jl")
 include("compute_utility.jl")
 
-export multinomial_logit, @utility, @β
+export multinomial_logit, @utility, @β, @dummy_code
 
 end

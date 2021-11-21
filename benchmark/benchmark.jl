@@ -11,6 +11,9 @@ using BenchmarkTools
 using Logging
 using JuliaDB
 using JuliaDBMeta
+using Optim
+
+const SAMPLES = 10
 
 function benchmark_mnl()
     suite = BenchmarkGroup()
@@ -37,7 +40,7 @@ function benchmark_mnl()
             2 => :avsm,
             3 => :avcar,
         ]
-    ) samples=100
+    ) samples=SAMPLES
 
     return suite
 end
@@ -74,7 +77,7 @@ function benchmark_mnl_juliadb()
             2 => :avsm,
             3 => :avcar,
         ]
-    )
+    ) samples = SAMPLES
 end
 
 

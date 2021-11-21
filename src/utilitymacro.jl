@@ -150,3 +150,19 @@ macro β(outcomenode, variablenode, includealpha=false)
 
     return esc(quote $(res...) end)
 end
+
+macro dummy_code(prefix, column, valuenode)
+    values = eval(valuenode)
+    expressions = map(values) do val
+        β = (Symbol("$(prefix)_$(column)_$(val)"))
+        :($β * ($column == $val))
+    end
+
+    if length(expressions) == 0
+        quote end
+    elseif length(expressions) == 1
+        esc(expressions[1])
+    else
+        esc(Expr(:call, :+, expressions...))
+    end
+end
