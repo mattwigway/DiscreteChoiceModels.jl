@@ -24,9 +24,10 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
   can infer that chosen will always be an Int64 and avoid allocations
 - Similarly, avail_cols is passed as a tuple of vals. Using the generated function, these are splatted out to a tuple of
   booleans before the loop runs, because reading the vals within the loop means the compiler can't (or doesn't) as of
-  Julia 1.6.3 infer the type of row[avail_cols[i]]
+  Julia 1.6.3 infer the type of row[avail_cols[i]] (TODO would passing a Val{Tuple} instead of an NTuple{Val} avoid the
+  need for a generated)
 - params is received as a Vector{T} not an AbstractVector{T} - for some reason this saves two allocations
-- FunctionWrappers are used to indicate to the compiler that ufunc will always return the same type
+- FunctionWrappers are used to indicate to the compiler that ufunc will always return the same type (tested, the wrapper is necessary)
 =#
 @generated function mnl_ll_row(row, params::Vector{T}, utility_functions::NTuple{N, FunctionWrapper{T, <:Tuple{Vector{T}, <:Any}}}, ::Val{chosen_col}, avail_cols) where {T, N, chosen_col}
     quote
