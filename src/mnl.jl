@@ -28,6 +28,9 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
   need for a generated)
 - params is received as a Vector{T} not an AbstractVector{T} - for some reason this saves two allocations
 - FunctionWrappers are used to indicate to the compiler that ufunc will always return the same type (tested, the wrapper is necessary)
+
+- Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
+  necessary inside a function.
 =#
 @generated function mnl_ll_row(row, params::Vector{T}, utility_functions::NTuple{N, FunctionWrapper{T, <:Tuple{Vector{T}, <:Any}}}, ::Val{chosen_col}, avail_cols) where {T, N, chosen_col}
     quote
