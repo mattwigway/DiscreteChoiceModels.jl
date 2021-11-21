@@ -155,7 +155,7 @@ uuid = "b552c78f-8df3-52c6-915a-8e097449b14b"
 version = "1.4.0"
 
 [[DiscreteChoiceModels]]
-deps = ["BenchmarkTools", "DataFrames", "DataFramesMeta", "ForwardDiff", "IndexedTables", "JuliaDB", "JuliaDBMeta", "LinearAlgebra", "MacroTools", "OnlineStats", "Optim", "PrettyTables", "Printf", "Revise", "StaticArrays", "Statistics", "StatsBase", "Tables"]
+deps = ["BenchmarkTools", "DataFrames", "DataFramesMeta", "ForwardDiff", "FunctionWrappers", "IndexedTables", "JuliaDB", "JuliaDBMeta", "LinearAlgebra", "MacroTools", "OnlineStats", "Optim", "PrettyTables", "Printf", "Revise", "StaticArrays", "Statistics", "StatsBase", "Tables"]
 path = ".."
 uuid = "c2e53169-916a-425c-bc99-aa016d67d968"
 version = "0.0.1"
@@ -211,6 +211,11 @@ deps = ["CommonSubexpressions", "DiffResults", "DiffRules", "LinearAlgebra", "Lo
 git-tree-sha1 = "6406b5112809c08b1baa5703ad274e1dded0652f"
 uuid = "f6369f11-7733-5829-9624-2563aa707210"
 version = "0.10.23"
+
+[[FunctionWrappers]]
+git-tree-sha1 = "241552bc2209f0fa068b6415b1942cc0aa486bcc"
+uuid = "069b7b12-0de2-55c6-9aab-29f3d0a68a2e"
+version = "1.1.2"
 
 [[Future]]
 deps = ["Random"]

@@ -1,6 +1,7 @@
 module DiscreteChoiceModels
 
-using OnlineStats, Tables, JuliaDB, JuliaDBMeta, Printf, Statistics, LinearAlgebra
+using OnlineStats, Tables, JuliaDB, JuliaDBMeta, Printf, Statistics, LinearAlgebra, DataFrames
+import FunctionWrappers: FunctionWrapper
 
 include("LogitModel.jl")
 include("util.jl")

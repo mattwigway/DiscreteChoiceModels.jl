@@ -32,10 +32,9 @@ end
 #=
 Get column type for a column in an IndexedTable
 =#
-function coltype(table::JuliaDB.AbstractIndexedTable, column)
-    ttyp = typeof(table)
-    return ttyp.parameters[1].parameters[2].parameters[findfirst(p -> p == column, ttyp.parameters[1].parameters[1])]
-end
+coltype(table, column) = fieldtype(rowtype(table), column)
+rowtype(table::JuliaDB.AbstractIndexedTable) = eltype(table)
+rowtype(table::DataFrame) = NamedTuple{typeof(Tables.schema(table)).parameters...}
 
 #=
 Evaluate perfect prediction problems, returns true if perfect prediction found
