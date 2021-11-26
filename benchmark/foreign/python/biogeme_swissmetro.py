@@ -71,4 +71,4 @@ class BiogemeSwissmetro(Benchmarkable):
         self.biogeme.modelName = "01logit"
 
         # actually do the estimation
-        self.biogeme.estimate()
+        return self.biogeme.estimate()

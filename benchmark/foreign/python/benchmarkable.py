@@ -42,3 +42,7 @@ class Benchmarkable(multiprocessing.Process):
             times[i] = q.get()
 
         return func(times)
+
+    def runonce(self):
+        self.setup()
+        return self.measurable()
