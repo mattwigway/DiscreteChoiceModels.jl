@@ -4,16 +4,15 @@ Functions to compute likelihood based on DataFrames or JuliaDB tables
 
 # find a prefix that is not used by any columns in the table by appending
 # numbers to prefix
-# TODO should work on all tables, not just dataframes
-function find_unused_prefix(table::DataFrame, prefix::String)
+function find_unused_prefix(table, prefix::String)
     names = string.(Tables.columnnames(table))
     return find_unused_prefix(names, prefix)
 end
 
-function find_unused_prefix(table::JuliaDB.AbstractIndexedTable, prefix::String)
-    names = string.(colnames(table))
-    return find_unused_prefix(names, prefix)
-end
+# function find_unused_prefix(table::JuliaDB.AbstractIndexedTable, prefix::String)
+#     names = string.(colnames(table))
+#     return find_unused_prefix(names, prefix)
+# end
 
 function find_unused_prefix(names::Union{Vector{String}, NTuple{N, String}}, prefix::String) where N
     name = prefix
@@ -59,12 +58,21 @@ function prepare_data(table::DataFrame, chosen, alt_numbers, availability)
     return output_table, choice_col, avail_cols
 end
 
+function prepare_data(table::DTable, chosen, alt_numbers, availability)
+    # find an unused name
+    choice_col = find_unused_prefix(table, "enumerated_choice")
+
+    table = map(r -> merge(NamedTuple{(choice_col,), Tuple{Int64}}(alt_numbers[r[chosen]]), pairs(r)), table)
+
+    avail_cols = index_availability(availability, alt_numbers)
+    return table, choice_col, avail_cols
+end
+
 #=
 Version of prepare_data to work with JuliaDB IndexedTables
 Does exactly the same as the above function, using multiple dispatch
 to seamlessly handle different data sources. Should work out of core
 automatically on a Julia cluster.
-=#
 function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, availability)
     # find an unused name
     choice_col = find_unused_prefix(table, "enumerated_choice")
@@ -81,6 +89,7 @@ function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, 
     avail_cols = index_availability(availability, alt_numbers)
     return output_table, choice_col, avail_cols
 end
+=#
 
 # All tables.jl sources converted to DataFrame in prepare_data above
 function rowwise_loglik(loglik_for_row::Function, table::DataFrame, params::Vector{<:Any}, args...)
@@ -96,13 +105,13 @@ end
 #=
 as above, but for a (possibly-distributed) IndexedTable
 =#
-function rowwise_loglik(loglik_for_row, table::JuliaDB.AbstractIndexedTable, params::Vector{T}, args...) where T <: Number
+function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args...) where T <: Number
     # fingers crossed forwarddiff can handle distributed functions, I think it should
     # most function calls use first defn, first call on each worker uses second
     # TODO ensure enclosure here is type-stable
-    reducer(x::T, y::NamedTuple)::T = x + loglik_for_row(y, params, args...)::T
-    reducer(x::NamedTuple, y::NamedTuple)::T = loglik_for_row(x, params, args...)::T + loglik_for_row(y, params, args...)::T
-    reducer(x::T, y::T)::T = (x + y)::T
+    # reducer(x::T, y::NamedTuple)::T = x + loglik_for_row(y, params, args...)::T
+    # reducer(x::NamedTuple, y::NamedTuple)::T = loglik_for_row(x, params, args...)::T + loglik_for_row(y, params, args...)::T
+    # reducer(x::T, y::T)::T = (x + y)::T
 
-    return reduce(reducer, table)::T
+    return fetch(reduce(+, map(r -> (ll=loglik_for_row(r, params, args...),), table))).ll
 end

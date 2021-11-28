@@ -1,3 +1,5 @@
+import Base: length
+
 #=
 Convert a vector of pairs of {choice => availaility} to a matrix
 if availability is nothing, return nothing
@@ -19,7 +21,6 @@ end
 
 #=
 Find unique values of a column
-=#
 function find_unique_values(table::JuliaDB.AbstractIndexedTable, column)
     reducer(x::NamedTuple, y::NamedTuple) = Set{typeof(x[column])}([x[column], y[column]])
     # treat sets as immutable. not sure if this matters but could imagine data races.
@@ -28,17 +29,20 @@ function find_unique_values(table::JuliaDB.AbstractIndexedTable, column)
 
     return reduce(reducer, table)
 end
+=#
 
 #=
 Get column type for a column in an IndexedTable
 =#
 coltype(table, column) = fieldtype(rowtype(table), column)
-rowtype(table::JuliaDB.AbstractIndexedTable) = eltype(table)
+#rowtype(table::JuliaDB.AbstractIndexedTable) = eltype(table)
 rowtype(table::DataFrame) = NamedTuple{typeof(Tables.schema(table)).parameters...}
+rowtype(table::DTable) = Tables.ColumnsRow{NamedTuple{typeof(Tables.schema(table)).parameters...}}
+
 
 #=
 Evaluate perfect prediction problems, returns true if perfect prediction found
-=#
+
 function check_perfect_prediction(table::JuliaDB.AbstractIndexedTable, choice, predictors=collect(filter(c -> c != choice, colnames(table))))
     # first, find all unique values of choice
     unique_choice = find_unique_values(table, choice)
@@ -114,3 +118,6 @@ function check_perfect_prediction(table::JuliaDB.AbstractIndexedTable, choice, p
 
     return problems_found
 end
+=#
+
+#length(table::DTable) = fetch(reduce(+, map(r -> (unity=1,), table))).unity

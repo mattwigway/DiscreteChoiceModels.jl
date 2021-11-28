@@ -33,7 +33,7 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions::NTuple{N, FunctionWrapper{T, <:Tuple{Vector{T}, <:Any}}}, ::Val{chosen_col}, avail_cols) where {T, N, chosen_col}
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols) where {T, N, chosen_col}
     util_sum = zero(T)
 
     chosen = row[chosen_col]
@@ -41,7 +41,8 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions::NTuple{N, Functio
     for (choiceidx, ufunc) in enumerate(utility_functions)
         exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
             # choice is available, either implicitly or explicitly
-            exp(ufunc(params, row)::T)
+            # convert(T) is needed for fixed alternatives, where utility might end up being an Int64/Float64 instead of a ForwardDiff.Dual
+            exp(convert(T, ufunc(params, row)))
         else
             zero(T)
         end
@@ -55,15 +56,8 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions::NTuple{N, Functio
     log(chosen_exputil / util_sum)
 end
 
-wrap_utility_functions(T, R, utilityfuncs) = tuple(map(f -> FunctionWrapper{T, Tuple{Vector{T}, R}}(f), utilityfuncs)...)
-
 function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T})::T where T
-    R = rowtype(data)
-    U = typeof(utility_functions)
-    A = typeof(avail_cols)
-    rowwise_loglik(
-        FunctionWrapper{T, Tuple{R, Vector{T}, U, Val, A}}(mnl_ll_row),
-        data, parameters, utility_functions, chosen_col, avail_cols)
+    rowwise_loglik(mnl_ll_row, data, parameters, utility_functions, chosen_col, avail_cols)
 end
 
 function multinomial_logit(
@@ -76,16 +70,14 @@ function multinomial_logit(
     verbose=:no
     )
 
-    if data isa JuliaDB.AbstractIndexedTable
-        check_perfect_prediction(data, chosen, [utility.columnnames...])
-    end
+    # if data isa JuliaDB.AbstractIndexedTable
+    #     check_perfect_prediction(data, chosen, [utility.columnnames...])
+    # end
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
 
-    row_type = rowtype(data)
-    obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(wrap_utility_functions(T, row_type, utility.utility_functions), Val(choice_col), avail_cols, data, p)
+    obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(utility.utility_functions, Val(choice_col), avail_cols, data, p)
     init_ll = -obj(utility.starting_values)
-    @time init_ll = -obj(utility.starting_values)
 
     @info "Log-likelihood at starting values $(init_ll)"
 
