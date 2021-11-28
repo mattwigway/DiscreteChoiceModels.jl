@@ -89,7 +89,7 @@ macro utility(ex::Expr)
             end
 
             # turn alternatives into numbers for processing speed
-            push!(util_funcs, :((params, row) -> $parsed_rhs))
+            push!(util_funcs, :((params, row) -> @inbounds($parsed_rhs)))
             alt_numbers[lhs] = length(util_funcs)
         end
 
@@ -104,7 +104,7 @@ macro utility(ex::Expr)
             coefnames = $coefnames,
             starting_values = $starting_values,
             fixed_coefs = $fixed_coefs,
-            utility_functions = [$(util_funcs...)],
+            utility_functions = ($(util_funcs...),),
             alt_numbers = $alt_numbers,
             columnnames=$columns
         )
