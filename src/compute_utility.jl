@@ -96,13 +96,13 @@ end
 #=
 as above, but for a (possibly-distributed) IndexedTable
 =#
-function rowwise_loglik(loglik_for_row::Function, table::JuliaDB.AbstractIndexedTable, params::Vector{T}, args...) where T <: Number
+function rowwise_loglik(loglik_for_row, table::JuliaDB.AbstractIndexedTable, params::Vector{T}, args...) where T <: Number
     # fingers crossed forwarddiff can handle distributed functions, I think it should
     # most function calls use first defn, first call on each worker uses second
     # TODO ensure enclosure here is type-stable
     reducer(x::T, y::NamedTuple)::T = x + loglik_for_row(y, params, args...)::T
     reducer(x::NamedTuple, y::NamedTuple)::T = loglik_for_row(x, params, args...)::T + loglik_for_row(y, params, args...)::T
-    reducer(x::T, y::T)::T = x + y
+    reducer(x::T, y::T)::T = (x + y)::T
 
     return reduce(reducer, table)::T
 end
