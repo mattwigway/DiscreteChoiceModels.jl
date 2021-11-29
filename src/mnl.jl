@@ -1,6 +1,5 @@
 using Optim
 using PrettyTables
-using ForwardDiff
 using LinearAlgebra
 using Tables
 
@@ -33,7 +32,7 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols) where {T, N, chosen_col}
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols) where {T <: Number, chosen_col}
     util_sum = zero(T)
 
     chosen = row[chosen_col]
@@ -41,8 +40,7 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
     for (choiceidx, ufunc) in enumerate(utility_functions)
         exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
             # choice is available, either implicitly or explicitly
-            # convert(T) is needed for fixed alternatives, where utility might end up being an Int64/Float64 instead of a ForwardDiff.Dual
-            exp(convert(T, ufunc(params, row)))
+            exp(ufunc(params, row))
         else
             zero(T)
         end
@@ -56,7 +54,7 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
     log(chosen_exputil / util_sum)
 end
 
-function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T})::T where T
+function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T}) where T
     rowwise_loglik(mnl_ll_row, data, parameters, utility_functions, chosen_col, avail_cols)
 end
 
@@ -82,7 +80,9 @@ function multinomial_logit(
     @info "Log-likelihood at starting values $(init_ll)"
 
     results = optimize(
-        TwiceDifferentiable(obj, copy(utility.starting_values), autodiff=:forward),
+        TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
+        #(G, x) -> G .= Zygote.gradient(obj, x),
+        #(H, x) -> H .= Zygote.hessian(obj, x),
         copy(utility.starting_values),
         method,
         Optim.Options(show_trace=verbose == :medium || verbose == :high)

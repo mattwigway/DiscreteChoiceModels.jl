@@ -1,6 +1,13 @@
 # Vehicle ownership model, based on the NHTS
 
-using CSV, CodecZlib, Profile, DiscreteChoiceModels, Dagger, Distributed
+# this has 
+using Distributed; addprocs()
+@everywhere begin
+    using Pkg
+    Pkg.activate(Base.source_dir())
+end
+
+using CSV, CodecZlib, Profile, DiscreteChoiceModels, Dagger
 
 # to save space in the repo, data are gzipped. helper function to read a
 # gzipped csv "straight" into JuliaDB (via a temporary file)
@@ -49,12 +56,5 @@ function main()
 
     println(summary(model))
 end
-
-# addprocs()
-# @everywhere begin
-#     using Pkg
-#     Pkg.activate(Base.source_dir())
-#     using DiscreteChoiceModels
-# end
 
 main()

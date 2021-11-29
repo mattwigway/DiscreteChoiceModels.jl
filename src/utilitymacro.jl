@@ -104,7 +104,7 @@ macro utility(ex::Expr)
             coefnames = $coefnames,
             starting_values = $starting_values,
             fixed_coefs = $fixed_coefs,
-            utility_functions = ($(util_funcs...),),
+            utility_functions = [$(util_funcs...)],
             alt_numbers = $alt_numbers,
             columnnames=$columns
         )

@@ -92,7 +92,7 @@ end
 =#
 
 # All tables.jl sources converted to DataFrame in prepare_data above
-function rowwise_loglik(loglik_for_row::Function, table::DataFrame, params::Vector{<:Any}, args...)
+function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...) where T <: Number
     # make the vector the same as the element type of params so ForwardDiff works
     thread_ll = zeros(eltype(params), Threads.nthreads())
     for row in Tables.namedtupleiterator(table)
@@ -113,5 +113,13 @@ function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args..
     # reducer(x::NamedTuple, y::NamedTuple)::T = loglik_for_row(x, params, args...)::T + loglik_for_row(y, params, args...)::T
     # reducer(x::T, y::T)::T = (x + y)::T
 
-    return fetch(reduce(+, map(r -> (ll=loglik_for_row(r, params, args...),), table))).ll
+    #return fetch(reduce(+, map(r -> (ll=loglik_for_row(r, params, args...),), table))).ll
+
+    ll_parts = Vector{Dagger.EagerThunk}()
+    sizehint!(ll_parts, length(table.chunks))
+    for chunk in table.chunks
+        push!(ll_parts, Dagger.spawn(rowwise_loglik, loglik_for_row, chunk, params, args...))
+    end
+
+    fetch(Dagger.spawn(+, ll_parts...))
 end

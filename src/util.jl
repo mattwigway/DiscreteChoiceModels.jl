@@ -1,4 +1,4 @@
-import Base: length
+import ForwardDiff: ≺
 
 #=
 Convert a vector of pairs of {choice => availaility} to a matrix
