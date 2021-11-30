@@ -69,7 +69,7 @@ function multinomial_logit(
     chosen,
     data;
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
-    method=NewtonTrustRegion(),
+    method=Newton(),
     se=true,
     verbose=:no
     )

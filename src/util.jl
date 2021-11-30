@@ -37,7 +37,6 @@ coltype(table, column) = fieldtype(rowtype(table), column)
 rowtype(table::DataFrame) = NamedTuple{typeof(Tables.schema(table)).parameters...}
 rowtype(table::DTable) = typeof(first(Tables.rows(table)))#Tables.ColumnsRow{NamedTuple{typeof(Tables.schema(table)).parameters...}}
 
-
 #=
 Evaluate perfect prediction problems, returns true if perfect prediction found
 

@@ -62,7 +62,9 @@ function prepare_data(table::DTable, chosen, alt_numbers, availability)
     # find an unused name
     choice_col = find_unused_prefix(table, "enumerated_choice")
 
-    table = map(r -> merge(NamedTuple{(choice_col,), Tuple{Int64}}(alt_numbers[r[chosen]]), pairs(r)), table)
+    table = map(table) do r
+        merge(NamedTuple{(choice_col,), Tuple{Int64}}(alt_numbers[r[chosen]]), pairs(r))
+    end
 
     avail_cols = index_availability(availability, alt_numbers)
     return table, choice_col, avail_cols
@@ -91,21 +93,12 @@ function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, 
 end
 =#
 
-# barrier function for type stability when calc'ing loglikelihoods: https://github.com/JuliaData/DataFrames.jl/issues/1827
-function _rowwise_loglik(loglik_for_row, itr, params::Vector{T}, args...) where T <: Number
-    loglik = zero(T)
-    for row in itr
-        loglik += loglik_for_row(row, params, args...)
-    end
-    loglik
-end
-
 # All tables.jl sources converted to DataFrame in prepare_data above
 function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
     # make the vector the same as the element type of params so ForwardDiff works
     #@infiltrate
-    #mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(table), init=zero(T))::T
-    _rowwise_loglik(loglik_for_row, Tables.rows(table), params, args...)
+    mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.rows(table), init=zero(T))::T
+    #@time _rowwise_loglik(loglik_for_row, Tables.rows(table), params, args...)
 end
 
 #=
@@ -119,15 +112,11 @@ function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args..
     # reducer(x::NamedTuple, y::NamedTuple)::T = loglik_for_row(x, params, args...)::T + loglik_for_row(y, params, args...)::T
     # reducer(x::T, y::T)::T = (x + y)::T
 
-    #return fetch(reduce(+, map(r -> (ll=loglik_for_row(r, params, args...),), table))).ll
+    ll_parts = Vector{Dagger.EagerThunk}()
+    sizehint!(ll_parts, length(table.chunks))
+    for chunk in table.chunks
+        push!(ll_parts, Dagger.spawn(rowwise_loglik, loglik_for_row, chunk, params, args...))
+    end
 
-    # ll_parts = Vector{Dagger.EagerThunk}()
-    # sizehint!(ll_parts, length(table.chunks))
-    # for chunk in table.chunks
-    #     push!(ll_parts, Dagger.spawn(rowwise_loglik, loglik_for_row, chunk, params, args...))
-    # end
-
-    # fetch(Dagger.spawn(+, ll_parts...))
-
-    mapreduce(c -> rowwise_loglik(loglik_for_row, fetch(c), params, args...), +, table.chunks)
+    fetch(Dagger.spawn(+, ll_parts...))
 end
