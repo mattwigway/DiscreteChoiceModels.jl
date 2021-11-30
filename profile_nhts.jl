@@ -1,30 +1,38 @@
 # Vehicle ownership model, based on the NHTS
 
-# this has 
-using Distributed; addprocs()
-@everywhere begin
-    using Pkg
-    Pkg.activate(Base.source_dir())
-end
+# comment out when using --track-allocations so not so many mem files
+# using Distributed; addprocs()
+# @everywhere begin
+#     using Pkg
+#     Pkg.activate(Base.source_dir())
+# end
 
-using CSV, CodecZlib, Profile, DiscreteChoiceModels, Dagger
+using CSV, CodecZlib, Profile, DiscreteChoiceModels, Dagger, Optim, Tables
+import Tables: columnnames
 
 # to save space in the repo, data are gzipped. helper function to read a
 # gzipped csv "straight" into JuliaDB (via a temporary file)
-function read_gzipped_csv(file)
+function read_gzipped_csv(file; cs=30000)
     open(GzipDecompressorStream, file) do is
         mktemp() do path, os
             write(os, read(is))
-            DTable(CSV.File(path), 30000)
+            DTable(Tables.rowtable(CSV.File(path)), cs)
         end
     end
 end
 
-function read_data(basepath)
-    data = read_gzipped_csv(joinpath(basepath, "hhpub.csv.gz"))
+Tables.columnnames(::Vector{NamedTuple{N, T}}) where {N, T} = N
+
+function read_data(basepath; cs=30000)
+    data = read_gzipped_csv(joinpath(basepath, "hhpub.csv.gz"), cs=cs)
 
     # topcode hhvehcnt
     data = map(r -> merge((hhveh_topcode=min(r.HHVEHCNT, 4),), pairs(r)), data)
+
+    data = filter(data) do row
+        row.HHSTATE in Set(["CA", "OR", "WA", "NV", "ID", "AZ", "UT", "CO", "NM", "MT", "TX", "OK", "NE", "WY", "ND", "SD"])
+    end
+
     data
 end
 
@@ -46,15 +54,14 @@ function run_model(data)
 end
 
 function main()
-    data = read_data("test/data/nhts")
-
-    data = filter(data) do row
-        row.HHSTATE in Set(["CA", "OR", "WA", "NV", "ID", "AZ", "UT", "CO", "NM", "MT", "TX", "OK", "NE", "WY", "ND", "SD"])
-    end
-
-    model = @time run_model(data)
+    data = read_data("test/data/nhts", cs=30000)
+    model = run_model(data)
 
     println(summary(model))
+
+
 end
+
+rechunk(table, chunksize) = DTable(collect(table), chunksize)
 
 main()

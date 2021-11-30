@@ -32,7 +32,7 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols) where {T <: Number, chosen_col}
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
     util_sum = zero(T)
 
     chosen = row[chosen_col]
@@ -55,7 +55,13 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
 end
 
 function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T}) where T
-    rowwise_loglik(mnl_ll_row, data, parameters, utility_functions, chosen_col, avail_cols)
+    R = rowtype(data)
+    U = typeof(utility_functions)
+    C = typeof(chosen_col)
+    A = typeof(avail_cols)
+    rowwise_loglik(
+        FunctionWrapper{T, Tuple{R, Vector{T}, U, C, A}}(mnl_ll_row),
+        data, parameters, utility_functions, chosen_col, avail_cols)
 end
 
 function multinomial_logit(
@@ -73,8 +79,10 @@ function multinomial_logit(
     # end
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
-
-    obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(utility.utility_functions, Val(choice_col), avail_cols, data, p)
+    row_type = rowtype(data)
+    obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(
+        FunctionWrapper{T, Tuple{Vector{T}, row_type}}.(utility.utility_functions),
+        Val(choice_col), avail_cols, data, p)::T
     init_ll = -obj(utility.starting_values)
 
     @info "Log-likelihood at starting values $(init_ll)"
@@ -85,7 +93,7 @@ function multinomial_logit(
         #(H, x) -> H .= Zygote.hessian(obj, x),
         copy(utility.starting_values),
         method,
-        Optim.Options(show_trace=verbose == :medium || verbose == :high)
+        Optim.Options(show_trace=verbose == :medium || verbose == :high, extended_trace=verbose==:high)
     )
 
     if !Optim.converged(results)

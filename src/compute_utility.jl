@@ -91,21 +91,27 @@ function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, 
 end
 =#
 
-# All tables.jl sources converted to DataFrame in prepare_data above
-function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...) where T <: Number
-    # make the vector the same as the element type of params so ForwardDiff works
-    thread_ll = zeros(eltype(params), Threads.nthreads())
-    for row in Tables.namedtupleiterator(table)
-        thread_ll[Threads.threadid()] += loglik_for_row(row, params, args...)
+# barrier function for type stability when calc'ing loglikelihoods: https://github.com/JuliaData/DataFrames.jl/issues/1827
+function _rowwise_loglik(loglik_for_row, itr, params::Vector{T}, args...) where T <: Number
+    loglik = zero(T)
+    for row in itr
+        loglik += loglik_for_row(row, params, args...)
     end
+    loglik
+end
 
-    return sum(thread_ll)
+# All tables.jl sources converted to DataFrame in prepare_data above
+function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
+    # make the vector the same as the element type of params so ForwardDiff works
+    #@infiltrate
+    #mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(table), init=zero(T))::T
+    _rowwise_loglik(loglik_for_row, Tables.rows(table), params, args...)
 end
 
 #=
 as above, but for a (possibly-distributed) IndexedTable
 =#
-function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args...) where T <: Number
+function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args...)::T where T <: Number
     # fingers crossed forwarddiff can handle distributed functions, I think it should
     # most function calls use first defn, first call on each worker uses second
     # TODO ensure enclosure here is type-stable
@@ -115,11 +121,13 @@ function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args..
 
     #return fetch(reduce(+, map(r -> (ll=loglik_for_row(r, params, args...),), table))).ll
 
-    ll_parts = Vector{Dagger.EagerThunk}()
-    sizehint!(ll_parts, length(table.chunks))
-    for chunk in table.chunks
-        push!(ll_parts, Dagger.spawn(rowwise_loglik, loglik_for_row, chunk, params, args...))
-    end
+    # ll_parts = Vector{Dagger.EagerThunk}()
+    # sizehint!(ll_parts, length(table.chunks))
+    # for chunk in table.chunks
+    #     push!(ll_parts, Dagger.spawn(rowwise_loglik, loglik_for_row, chunk, params, args...))
+    # end
 
-    fetch(Dagger.spawn(+, ll_parts...))
+    # fetch(Dagger.spawn(+, ll_parts...))
+
+    mapreduce(c -> rowwise_loglik(loglik_for_row, fetch(c), params, args...), +, table.chunks)
 end

@@ -1,5 +1,3 @@
-import ForwardDiff: ≺
-
 #=
 Convert a vector of pairs of {choice => availaility} to a matrix
 if availability is nothing, return nothing
@@ -37,7 +35,7 @@ Get column type for a column in an IndexedTable
 coltype(table, column) = fieldtype(rowtype(table), column)
 #rowtype(table::JuliaDB.AbstractIndexedTable) = eltype(table)
 rowtype(table::DataFrame) = NamedTuple{typeof(Tables.schema(table)).parameters...}
-rowtype(table::DTable) = Tables.ColumnsRow{NamedTuple{typeof(Tables.schema(table)).parameters...}}
+rowtype(table::DTable) = typeof(first(Tables.rows(table)))#Tables.ColumnsRow{NamedTuple{typeof(Tables.schema(table)).parameters...}}
 
 
 #=
