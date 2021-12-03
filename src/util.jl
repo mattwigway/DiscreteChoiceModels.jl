@@ -34,8 +34,12 @@ Get column type for a column in an IndexedTable
 =#
 coltype(table, column) = fieldtype(rowtype(table), column)
 #rowtype(table::JuliaDB.AbstractIndexedTable) = eltype(table)
-rowtype(table::DataFrame) = NamedTuple{typeof(Tables.schema(table)).parameters...}
-rowtype(table::DTable) = typeof(first(Tables.rows(table)))#Tables.ColumnsRow{NamedTuple{typeof(Tables.schema(table)).parameters...}}
+rowtype(table) = typeof(first(Tables.rows(table)))
+# special code path for looping over data frames to ensure type stability uses numedtupleiterator
+rowtype(table::DataFrame) = typeof(first(Tables.namedtupleiterator(table)))
+
+# Work around https://github.com/JuliaData/Tables.jl/issues/264, using rowtables for dtables improves perf
+Tables.columnnames(::Vector{NamedTuple{N, T}}) where {N, T} = N
 
 #=
 Evaluate perfect prediction problems, returns true if perfect prediction found

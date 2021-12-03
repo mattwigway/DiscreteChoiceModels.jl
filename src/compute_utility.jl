@@ -93,7 +93,16 @@ function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, 
 end
 =#
 
-# All tables.jl sources converted to DataFrame in prepare_data above
+function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, args...)::T where T <: Number
+    mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(table), init=zero(T))::T
+
+    # ll_for_thread = zeros(T, Threads.nthreads())
+    # for row in Tables.namedtupleiterator(table)
+    #     ll_for_thread[Threads.threadid()] += loglik_for_row(row, params, args...)::T
+    # end
+    # return sum(ll_for_thread...)
+end
+
 function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
     # make the vector the same as the element type of params so ForwardDiff works
     #@infiltrate
