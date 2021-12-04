@@ -94,13 +94,18 @@ end
 =#
 
 function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, args...)::T where T <: Number
-    mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(table), init=zero(T))::T
+    #mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(table), init=zero(T))::T
 
-    # ll_for_thread = zeros(T, Threads.nthreads())
-    # for row in Tables.namedtupleiterator(table)
-    #     ll_for_thread[Threads.threadid()] += loglik_for_row(row, params, args...)::T
-    # end
-    # return sum(ll_for_thread...)
+    #loglik_for_row!(f, out, r, params, args...) = out[Threads.threadid()] += f(r, params, args...)
+
+    #reduce(+, asyncmap(r -> loglik_for_row(r, params, args...), Tables.namedtupleiterator(table)); init=zero(T))
+
+    @floop ThreadedEx() for row in Tables.namedtupleiterator(table)
+        ll_row = loglik_for_row(row, params, args...)::T
+        @reduce(ll += ll_row)
+    end
+
+    ll
 end
 
 function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number

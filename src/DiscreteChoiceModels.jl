@@ -1,6 +1,7 @@
 module DiscreteChoiceModels
 
-using OnlineStats, Tables, Printf, Statistics, LinearAlgebra, DataFrames, Dagger, ForwardDiff, Infiltrator, Cthulhu
+using OnlineStats, Tables, Printf, Statistics, LinearAlgebra, DataFrames, Dagger, ForwardDiff, Infiltrator,
+    Cthulhu, FLoops, SplittablesBase
 import FunctionWrappers: FunctionWrapper
 
 include("LogitModel.jl")

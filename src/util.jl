@@ -17,6 +17,40 @@ function availability_to_matrix(availability::Union{Nothing, <:AbstractVector{<:
     end
 end
 
+# Parallel functions on Tables.namedtupleiterator. From https://github.com/JuliaData/Tables.jl/pull/187
+function SplittablesBase.halve(rows::Tables.NamedTupleIterator{schema}) where schema
+    left, right = SplittablesBase.halve(rows.x)
+    return (
+        Tables.NamedTupleIterator{schema,typeof(left)}(left),
+        Tables.NamedTupleIterator{schema,typeof(right)}(right),
+    )
+end
+
+function consistent_rowcount(cols)
+    len = length(cols[1])
+    if !all(c -> length(c) == len, cols)
+        throw(ArgumentError("`halve` on columns return inconsistent number or rows"))
+    end
+    return len
+end
+
+function SplittablesBase.halve(x::Tables.RowIterator)
+    if isempty(Tables.columns(x))
+        len = cld(length(x), 2)
+        return (Tables.RowIterator(columns(x), len), Tables.RowIterator(columns(x), length(x) - len))
+    end
+    cs = map(SplittablesBase.halve, Tables.columns(x))
+    lefts = map(first, cs)
+    rights = map(last, cs)
+    return (
+        Tables.RowIterator(lefts, consistent_rowcount(lefts)),
+        Tables.RowIterator(rights, consistent_rowcount(rights)),
+    )
+end
+
+# END COPIED CODE
+
+
 #=
 Find unique values of a column
 function find_unique_values(table::JuliaDB.AbstractIndexedTable, column)
