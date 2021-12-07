@@ -4,7 +4,7 @@ Benchmark simple models
 
 =#
 
-using DiscreteChoiceModels, CSV, DataFrames, BenchmarkTools, Logging, JuliaDB, JuliaDBMeta, Optim, Distributed, CodecZlib
+using DiscreteChoiceModels, CSV, DataFrames, BenchmarkTools, Logging, Dagger, Distributed, CodecZlib
 
 const SAMPLES = 10
 
@@ -19,59 +19,65 @@ function benchmark_mnl()
     data.avcar = (data.CAR_AV .== 1) .& (data.SP .!= 0)
 
     # TODO ensure compilation time for the macro is included!!!! for a fair comparison.
-    @benchmarkable multinomial_logit(
-        @utility(begin
-            1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
-            2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
-            3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
+    @benchmarkable(
+        multinomial_logit(
+            @utility(begin
+                1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
+                2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
+                3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
 
-            αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
-        end),
-        :CHOICE,
-        $data,
-        availability=[
-            1 => :avtr,
-            2 => :avsm,
-            3 => :avcar,
-        ]
-<<<<<<< HEAD
-    ) samples=100
-
-    return suite
-=======
-    ) samples=SAMPLES
->>>>>>> 10faba5 (benchmark improvements)
+                αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
+            end),
+            :CHOICE,
+            $data,
+            availability=[
+                1 => :avtr,
+                2 => :avsm,
+                3 => :avcar,
+            ]
+        ),
+        samples=SAMPLES,
+        seconds=1e6,
+        evals=1
+     )
 end
 
-function benchmark_mnl_juliadb()
-    data = loadtable(get_test_file_path("biogeme_swissmetro.dat"), delim='\t', distributed=true)
+function benchmark_mnl_dtable()
+    data = DTable(Tables.rowtable(CSV.File(get_test_file_path("biogeme_swissmetro.dat"), delim='\t')), 2000)
 
     # filter to wanted cases
     data = filter(data) do row
         ((row.PURPOSE == 1) | (row.PURPOSE == 3)) && row.CHOICE != 0
     end
 
-    data = @transform data (
-        avtr=(:TRAIN_AV == 1) && (:SP != 0),
-        avsm=:SM_AV == 1,
-        avcar=(:CAR_AV == 1) && (:SP != 0)
-    )
+    data = map(data) do r
+        merge((
+            avtr=(r.TRAIN_AV == 1) && (r.SP != 0),
+            avsm=r.SM_AV == 1,
+            avcar=(r.CAR_AV == 1) && (r.SP != 0)
+        ), pairs(r))
+    end
 
-    @benchmarkable multinomial_logit(
-        @utility(begin
-            1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
-            2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
-            3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
+    @benchmarkable(
+        multinomial_logit(
+            @utility(begin
+                1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
+                2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
+                3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
 
-            αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
-        end),
-        :CHOICE,
-        $data,
-        availability=[
-            1 => :avtr,
-            2 => :avsm,
-            3 => :avcar,
-        ]
+                αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
+            end),
+            :CHOICE,
+            $data,
+            availability=[
+                1 => :avtr,
+                2 => :avsm,
+                3 => :avcar,
+            ]
+        ),
+        samples=SAMPLES,
+        seconds=1e6,
+        evals=1
     )
 end
 
@@ -86,8 +92,8 @@ function read_gzipped_csv(file, T; kwargs...)
     open(GzipDecompressorStream, file) do is
         mktemp() do path, os
             write(os, read(is))
-            if T <: JuliaDB.AbstractIndexedTable
-                loadtable(path, kwargs...)
+            if T <: DTable
+                DTable(CSV.File(path), 17500, kwargs...)
             elseif T <: DataFrame
                 CSV.read(path, DataFrame, kwargs...)
             else
@@ -97,61 +103,61 @@ function read_gzipped_csv(file, T; kwargs...)
     end
 end
 
-function benchmark_mnl_nhts_juliadb()
-    data = read_gzipped_csv(get_test_file_path("nhts/hhpub.csv.gz"), JuliaDB.IndexedTable)
-
-    data = filter(data) do row
-        row.HHSTATE in Set(["CA", "OR", "WA", "NV", "ID", "AZ", "UT", "CO", "NM", "MT", "TX", "OK", "NE", "WY", "ND", "SD"])
-    end
+function benchmark_mnl_nhts_dtable()
+    data = read_gzipped_csv(get_test_file_path("nhts/hhpub.csv.gz"), DTable)
 
     # topcode hhvehcnt
-    data = @transform data (hhveh_topcode = :HHVEHCNT ≥ 4 ? "4plus" : string(:HHVEHCNT),)
+    data = map(r -> merge((hhveh_topcode=min(r.HHVEHCNT, 4),), pairs(r)), data)
     
-    @benchmarkable multinomial_logit(
-        @utility(begin
-            "0" ~ α0
-            "1" ~ α1 + β1homeown * (HOMEOWN == 2) + @dummy_code(β1, HH_RACE, [2, 3, 4, 5, 6, 97]) + β1_hhsize * HHSIZE
-            "2" ~ α2 + β2homeown * (HOMEOWN == 2) + @dummy_code(β2, HH_RACE, [2, 3, 4, 5, 6, 97]) + β2_hhsize * HHSIZE
-            "3" ~ α3 + β3homeown * (HOMEOWN == 2) + @dummy_code(β3, HH_RACE, [2, 3, 4, 5, 6, 97]) + β3_hhsize * HHSIZE
-            "4plus" ~ α4plus + β4plushomeown * (HOMEOWN == 2) + @dummy_code(β4plus, HH_RACE, [2, 3, 4, 5, 6, 97]) + β4plus_hhsize * HHSIZE
+    @benchmarkable(
+        multinomial_logit(
+            @utility(begin
+                0 ~ α0
+                1 ~ α1 + β1homeown * (HOMEOWN == 2) + @dummy_code(β1, HH_RACE, [2, 3, 4, 5, 6, 97]) + β1_hhsize * HHSIZE
+                2 ~ α2 + β2homeown * (HOMEOWN == 2) + @dummy_code(β2, HH_RACE, [2, 3, 4, 5, 6, 97]) + β2_hhsize * HHSIZE
+                3 ~ α3 + β3homeown * (HOMEOWN == 2) + @dummy_code(β3, HH_RACE, [2, 3, 4, 5, 6, 97]) + β3_hhsize * HHSIZE
+                4 ~ α4plus + β4plushomeown * (HOMEOWN == 2) + @dummy_code(β4plus, HH_RACE, [2, 3, 4, 5, 6, 97]) + β4plus_hhsize * HHSIZE
 
-            α0 = 0, fixed
-        end),
-        :hhveh_topcode,
-        $data;
-        verbose=:medium
-    ) samples=SAMPLES
+                α0 = 0, fixed
+            end),
+            :hhveh_topcode,
+            $data
+        ),
+        samples=SAMPLES,
+        evals=1,
+        seconds=1e6
+    )
 end
 
 function benchmark_mnl_nhts_dataframe()
     data = read_gzipped_csv(get_test_file_path("nhts/hhpub.csv.gz"), DataFrame)
 
-    data = data[in.(data.HHSTATE, Ref(Set(["CA", "OR", "WA", "NV", "ID", "AZ", "UT", "CO", "NM", "MT", "TX", "OK", "NE", "WY", "ND", "SD"]))), :]
+    data.hhveh_topcode = min.(data.HHVEHCNT, 4)
 
-    data.hhveh_topcode = string.(min.(data.HHVEHCNT, 4))
-    data[data.hhveh_topcode .== "4", :hhveh_topcode] .= "4plus"
+    @benchmarkable(
+        multinomial_logit(
+            @utility(begin
+                0 ~ α0
+                1 ~ α1 + β1homeown * (HOMEOWN == 2) + @dummy_code(β1, HH_RACE, [2, 3, 4, 5, 6, 97]) + β1_hhsize * HHSIZE
+                2 ~ α2 + β2homeown * (HOMEOWN == 2) + @dummy_code(β2, HH_RACE, [2, 3, 4, 5, 6, 97]) + β2_hhsize * HHSIZE
+                3 ~ α3 + β3homeown * (HOMEOWN == 2) + @dummy_code(β3, HH_RACE, [2, 3, 4, 5, 6, 97]) + β3_hhsize * HHSIZE
+                4 ~ α4plus + β4plushomeown * (HOMEOWN == 2) + @dummy_code(β4plus, HH_RACE, [2, 3, 4, 5, 6, 97]) + β4plus_hhsize * HHSIZE
 
-    @benchmarkable multinomial_logit(
-        @utility(begin
-            "0" ~ α0
-            "1" ~ α1 + β1homeown * (HOMEOWN == 2) + @dummy_code(β1, HH_RACE, [2, 3, 4, 5, 6, 97]) + β1_hhsize * HHSIZE
-            "2" ~ α2 + β2homeown * (HOMEOWN == 2) + @dummy_code(β2, HH_RACE, [2, 3, 4, 5, 6, 97]) + β2_hhsize * HHSIZE
-            "3" ~ α3 + β3homeown * (HOMEOWN == 2) + @dummy_code(β3, HH_RACE, [2, 3, 4, 5, 6, 97]) + β3_hhsize * HHSIZE
-            "4plus" ~ α4plus + β4plushomeown * (HOMEOWN == 2) + @dummy_code(β4plus, HH_RACE, [2, 3, 4, 5, 6, 97]) + β4plus_hhsize * HHSIZE
-
-            α0 = 0, fixed
-        end),
-        :hhveh_topcode,
-        $data;
-        verbose=:medium
-    ) samples=SAMPLES
+                α0 = 0, fixed
+            end),
+            :hhveh_topcode,
+            $data
+        ),
+        samples=SAMPLES,
+        evals=1,
+        seconds=1e6
+    )
 end
 
 function should_run(benchmark_name)
     run = length(ARGS) == 0 || benchmark_name in ARGS
     # INFO level debugging is disabled. If I were fancy I'd filter log messages by module, but... I'm not
-    run && @warn "running benchmark $benchmark_name"
-    run || @error "skipping benchmark $benchmark_name"
+    run || @warn "skipping benchmark $benchmark_name"
     return run
 end
 
@@ -160,15 +166,15 @@ function main()
     "--verbose" in ARGS || Logging.disable_logging(Logging.Info)
     suite = BenchmarkGroup()
 
-    should_run("MNL_Swissmetro_JuliaDB") && (suite["MNL_Swissmetro_JuliaDB"] = benchmark_mnl_juliadb())
+    should_run("MNL_Swissmetro_DTable") && (suite["MNL_Swissmetro_DTable"] = benchmark_mnl_dtable())
     should_run("MNL_Swissmetro_DataFrame") && (suite["MNL_Swissmetro_DataFrame"] = benchmark_mnl())
-    should_run("MNL_NHTS_JuliaDB") && (suite["MNL_NHTS_JuliaDB"] = benchmark_mnl_nhts_juliadb())
+    should_run("MNL_NHTS_DTable") && (suite["MNL_NHTS_DTable"] = benchmark_mnl_nhts_dtable())
     should_run("MNL_NHTS_DataFrame") && (suite["MNL_NHTS_DataFrame"] = benchmark_mnl_nhts_dataframe())
 
-    tune!(suite)
-    results = run(suite)
-    # use median runtime as not skewed by initial compilation
-    println(median(results))
+    #tune!(suite)
+    results = run(suite, verbose=true)
+
+    show(IOContext(stdout, :compact => false), results)
 end
 
 # ugly that this has to be done at top level
