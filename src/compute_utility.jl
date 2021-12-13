@@ -55,6 +55,8 @@ function prepare_data(table::DataFrame, chosen, alt_numbers, availability)
     any(output_table[!, choice_col] .== -1) && error("not all alternatives appear in utility functions")
 
     avail_cols = index_availability(availability, alt_numbers)
+    !isnothing(avail_cols) && check_availability(output_table, avail_cols, choice_col)
+
     return output_table, choice_col, avail_cols
 end
 
@@ -67,7 +69,16 @@ function prepare_data(table::DTable, chosen, alt_numbers, availability)
     end
 
     avail_cols = index_availability(availability, alt_numbers)
+    !isnothing(avail_cols) && check_availability(table, avail_cols, choice_col)
+
     return table, choice_col, avail_cols
+end
+
+function check_availability(table, avail_cols, choice_col)
+    for (i, row) in enumerate(Tables.rows(table))
+        reduce(|, map(c -> row[c], avail_cols)) || @error "At row $i, no alternatives are available"
+        row[avail_cols[row[choice_col]]] || @error "At row $i, chosen alternative is not available"
+    end
 end
 
 #=
@@ -110,7 +121,6 @@ end
 
 function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
     # make the vector the same as the element type of params so ForwardDiff works
-    #@infiltrate
     mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.rows(table), init=zero(T))::T
     #@time _rowwise_loglik(loglik_for_row, Tables.rows(table), params, args...)
 end

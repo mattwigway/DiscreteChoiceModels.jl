@@ -55,6 +55,7 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
 end
 
 function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T}) where T
+    @debug "objective called with params" parameters
     R = rowtype(data)
     U = typeof(utility_functions)
     C = typeof(chosen_col)
@@ -71,7 +72,8 @@ function multinomial_logit(
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
     method=Newton(),
     se=true,
-    verbose=:no
+    verbose=:no,
+    iterations=1_000
     )
 
     # if data isa JuliaDB.AbstractIndexedTable
@@ -89,19 +91,19 @@ function multinomial_logit(
 
     results = optimize(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
-        #(G, x) -> G .= Zygote.gradient(obj, x),
-        #(H, x) -> H .= Zygote.hessian(obj, x),
         copy(utility.starting_values),
         method,
-        Optim.Options(show_trace=verbose == :medium || verbose == :high, extended_trace=verbose==:high)
+        Optim.Options(show_trace=verbose == :medium || verbose == :high, extended_trace=verbose==:high, iterations=iterations)
     )
 
     if !Optim.converged(results)
-        throw(ConvergenceException(Optim.iterations(results)))
+        @error "Failed to converge!"
+        #throw(ConvergenceException(Optim.iterations(results)))
+    else
+        @info "Optimization converged successfully after $(Optim.iterations(results)) iterations"
     end
 
     @info """
-    Optimization converged successfully after $(Optim.iterations(results)) iterations
     Using method $(Optim.summary(results)),
     $(Optim.f_calls(results)) function evaluations, $(Optim.g_calls(results)) gradient evaluations
     """
@@ -123,7 +125,7 @@ function multinomial_logit(
             inv_hess = inv(hess)
         catch e
             !(e isa LinearAlgebra.SingularException) && rethrow()
-            @warn "Hessian is singular. Not reporting standard errors, and you should probably be suspicious of point estimates."
+            @error "Hessian is singular. Not reporting standard errors, and you should probably be suspicious of point estimates."
             se = false
         end
 
@@ -150,14 +152,26 @@ Final log-likelihood: $(res.final_ll)
 McFadden's pseudo-R2 (relative to starting values): $mcfadden
 """
 
+    vc = vcov(res)
+    if !all(diag(vc) .≥ 0)
+        @error "Some estimated variances are negative, not showing std. errors!"
+        ses = diag(vc)
+        pval = fill(NaN, length(ses))
+        selab = "Var"
+    else
+        ses = sqrt.(diag(vc))
+        pval = coef(res) ./ ses
+        selab = "Std. Err."
+    end
+
     data = hcat(
         coefnames(res),
         coef(res),
-        stderror(res),
-        coef(res) ./ stderror(res)
+        ses,
+        pval
     )
 
-    table = pretty_table(String, data, header=["", "Coef", "Std. Err.", "Z-stat"],
+    table = pretty_table(String, data, header=["", "Coef", selab, "Z-stat"],
         header_crayon=crayon"yellow bold", formatters=ft_printf("%.5f", 2:4))
 
     return header * table

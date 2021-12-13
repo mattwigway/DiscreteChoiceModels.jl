@@ -24,8 +24,7 @@ class NHTS(Benchmarkable):
             )
         )
 
-        df = df[df.HHSTATE.isin({"CA", "OR", "WA", "NV", "ID", "AZ", "UT", "CO", "NM", "MT", "TX", "OK", "NE", "WY", "ND", "SD"})].copy()
-        df["homeown_dum"] = (df.HOMEOWN == 2).astype("float64")
+        df["homeown_dum"] = (df.HOMEOWN == 1).astype("float64")
         df["choice"] = np.minimum(df.HHVEHCNT, 4)
 
         df = df[[c for c, d in zip(df.dtypes.index, df.dtypes) if pd.api.types.is_numeric_dtype(d)]].copy()

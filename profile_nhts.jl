@@ -7,30 +7,32 @@ using Distributed; addprocs()
     Pkg.activate(Base.source_dir())
 end
 
-# unclear why three everywhere blocks are needed, but doesn't work if both together
-
-@everywhere using Tables
-# report this bug in tables where rowtables don't have a working columnnames
-@everywhere Tables.columnnames(::Vector{NamedTuple{N, T}}) where {N, T} = N
-
-using CSV, CodecZlib, Profile, DiscreteChoiceModels, Dagger, Optim, Tables, Infiltrator
+using CSV, CodecZlib, Profile, DiscreteChoiceModels, Dagger, Optim, Tables, Infiltrator, DataFrames
 
 # to save space in the repo, data are gzipped. helper function to read a
 # gzipped csv "straight" into JuliaDB (via a temporary file)
-function read_gzipped_csv(file; cs=30000)
+function read_gzipped_csv(T, file; cs=30000)
     open(GzipDecompressorStream, file) do is
         mktemp() do path, os
             write(os, read(is))
-            DTable(Tables.rowtable(CSV.File(path)), cs)
+            if T == DTable
+                DTable(Tables.rowtable(CSV.File(path)), cs)
+            else
+                T(CSV.File(path))
+            end
         end
     end
 end
 
-function read_data(basepath; cs=30000)
-    data = read_gzipped_csv(joinpath(basepath, "hhpub.csv.gz"), cs=cs)
+function read_data(T, basepath; cs=30000)
+    data = read_gzipped_csv(T, joinpath(basepath, "hhpub.csv.gz"), cs=cs)
 
     # topcode hhvehcnt
-    data = map(r -> merge((hhveh_topcode=min(r.HHVEHCNT, 4),), pairs(r)), data)
+    if T == DTable
+        data = map(r -> merge((hhveh_topcode=min(r.HHVEHCNT, 4),), pairs(r)), data)
+    else
+        data.hhveh_topcode = min.(data.HHVEHCNT, 4)
+    end
 
     data
 end
@@ -54,7 +56,7 @@ function run_model(data)
 end
 
 function main()
-    data = read_data("test/data/nhts", cs=30000)
+    data = read_data(DataFrame, "test/data/nhts", cs=30000)
     model = @time run_model(data)
 
     println(summary(model))
