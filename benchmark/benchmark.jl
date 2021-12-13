@@ -81,6 +81,21 @@ function benchmark_mnl_dtable()
     )
 end
 
+# benchmark the actual macroexpand, since it would be only compiled once during the other benchmarking
+# https://discourse.julialang.org/t/benchmark-macro-with-benchmarktools/72723/2
+function benchmark_mnl_macroexpand()
+    @benchmarkable(@macroexpand(@utility(begin
+                1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
+                2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
+                3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
+
+                αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
+            end)),
+            samples=SAMPLES,
+            seconds=1e6,
+            evals=1)
+end
+
 #########################################################
 # NHTS Model                                            #
 #########################################################
@@ -154,6 +169,21 @@ function benchmark_mnl_nhts_dataframe()
     )
 end
 
+function benchmark_mnl_nhts_macroexpand()
+    @benchmarkable(@macroexpand(@utility(begin
+                0 ~ α0
+                1 ~ α1 + β1homeown * (HOMEOWN == 2) + @dummy_code(β1, HH_RACE, [2, 3, 4, 5, 6, 97]) + β1_hhsize * HHSIZE
+                2 ~ α2 + β2homeown * (HOMEOWN == 2) + @dummy_code(β2, HH_RACE, [2, 3, 4, 5, 6, 97]) + β2_hhsize * HHSIZE
+                3 ~ α3 + β3homeown * (HOMEOWN == 2) + @dummy_code(β3, HH_RACE, [2, 3, 4, 5, 6, 97]) + β3_hhsize * HHSIZE
+                4 ~ α4plus + β4plushomeown * (HOMEOWN == 2) + @dummy_code(β4plus, HH_RACE, [2, 3, 4, 5, 6, 97]) + β4plus_hhsize * HHSIZE
+
+                α0 = 0, fixed
+            end)),
+            samples=SAMPLES,
+            seconds=1e6,
+            evals=1)
+end
+
 function should_run(benchmark_name)
     run = length(ARGS) == 0 || benchmark_name in ARGS
     # INFO level debugging is disabled. If I were fancy I'd filter log messages by module, but... I'm not
@@ -168,8 +198,11 @@ function main()
 
     should_run("MNL_Swissmetro_DTable") && (suite["MNL_Swissmetro_DTable"] = benchmark_mnl_dtable())
     should_run("MNL_Swissmetro_DataFrame") && (suite["MNL_Swissmetro_DataFrame"] = benchmark_mnl())
+    should_run("MNL_Swissmetro_macroexpand") && (suite["MNL_Swissmetro_macroexpand"] = benchmark_mnl_macroexpand())
     should_run("MNL_NHTS_DTable") && (suite["MNL_NHTS_DTable"] = benchmark_mnl_nhts_dtable())
     should_run("MNL_NHTS_DataFrame") && (suite["MNL_NHTS_DataFrame"] = benchmark_mnl_nhts_dataframe())
+    should_run("MNL_NHTS_macroexpand") && (suite["MNL_NHTS_macroexpand"] = benchmark_mnl_nhts_macroexpand())
+
 
     #tune!(suite)
     results = run(suite, verbose=true)
