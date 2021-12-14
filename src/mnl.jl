@@ -70,7 +70,7 @@ function multinomial_logit(
     chosen,
     data;
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
-    method=Newton(),
+    method=BFGS(),
     se=true,
     verbose=:no,
     iterations=1_000
