@@ -17,3 +17,4 @@ benchmark = function (file, func=median, invocations=100) {
 }
 
 benchmark("biogeme_swissmetro.R")
+benchmark("nhts.R")
