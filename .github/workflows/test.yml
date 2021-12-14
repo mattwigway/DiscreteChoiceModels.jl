@@ -1,0 +1,11 @@
+name: runtests
+on: [push]
+jobs:
+  runtests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: "1.7.0"
+      - run: julia --project -e "import Pkg; Pkg.instantiate(); Pkg.test()"
