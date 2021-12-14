@@ -4,25 +4,26 @@
 using Distributed
 procs = addprocs(4)
 Distributed.@everywhere begin
-    using Pkg; Pkg.activate(@__DIR__)
-    Pkg.instantiate(); Pkg.precompile()
-    using JuliaDB, JuliaDBMeta, DiscreteChoiceModels
+    using Pkg; Pkg.activate(joinpath(@__DIR__, "..", ".."))
 end
 
+@everywhere using Dagger, DiscreteChoiceModels
+
 @testset "Biogeme swissmetro distributed" begin
-    using JuliaDB, JuliaDBMeta
+    using Dagger
     using DiscreteChoiceModels
     using Test
     using StatsBase
+    using CSV
 
     @test length(workers()) == 4
 
-    data = loadtable(joinpath(dirname(Base.source_path()), "../data/biogeme_swissmetro.dat"),
-        distributed=true, chunks=4, delim='\t')
+    data = DTable(
+        CSV.File(joinpath(dirname(Base.source_path()), "../data/biogeme_swissmetro.dat"), delim='\t'),
+        2683
+    )
 
-    rechunk(data; chunks=4)
-    # TODO this is still not rechunking
-    #@test length(data.chunks) == 4
+    @test length(data.chunks) == 4
 
     # filter to wanted cases
     data = filter(data) do row
@@ -31,28 +32,30 @@ end
 
     @test length(data) == 6768
 
-    data = @transform data (
-        avtr=(:TRAIN_AV == 1) && (:SP != 0),
-        avsm=:SM_AV == 1,
-        avcar=(:CAR_AV == 1) && (:SP != 0)
-    )
+    data = map(data) do r
+        merge((
+            avtr=(r.TRAIN_AV == 1) && (r.SP != 0),
+            avsm=r.SM_AV == 1,
+            avcar=(r.CAR_AV == 1) && (r.SP != 0)
+        ), pairs(r))
+    end
 
     model = multinomial_logit(
-        @utility(begin
-            1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
-            2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
-            3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
+            @utility(begin
+                1 ~ αtrain + βtravel_time * TRAIN_TT / 100 + βcost * (TRAIN_CO * (GA == 0)) / 100
+                2 ~ αswissmetro + βtravel_time * SM_TT / 100 + βcost * SM_CO * (GA == 0) / 100
+                3 ~ αcar + βtravel_time * CAR_TT / 100 + βcost * CAR_CO / 100
 
-            αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
-        end),
-        :CHOICE,
-        data,
-        availability=[
-            1 => :avtr,
-            2 => :avsm,
-            3 => :avcar,
-        ]
-    )
+                αswissmetro = 0, fixed  # fix swissmetro ASC to zero 
+            end),
+            :CHOICE,
+            data,
+            availability=[
+                1 => :avtr,
+                2 => :avsm,
+                3 => :avcar,
+            ]
+        )
 
     coefs = Dict(zip(coefnames(model), round.(coef(model), sigdigits=3)))
     ses = Dict(zip(coefnames(model), round.(stderror(model), sigdigits=3)))
@@ -83,6 +86,8 @@ end
 
     @test round(loglikelihood(model), digits=3) ≈ -5331.252
     @test round(model.init_ll, digits=3) ≈ -6964.663
+
+    sleep(2)  # let dagger shut down
 end
 
 # clean up
