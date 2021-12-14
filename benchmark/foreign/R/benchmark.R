@@ -1,6 +1,6 @@
 library(stringr)
 
-benchmark = function (file, func=median, invocations=100) {
+benchmark = function (file, func=median, invocations=10) {
   times = numeric(invocations)
   
   for (i in 1:invocations) {
