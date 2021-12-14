@@ -149,9 +149,11 @@ version = "2.4.4"
 
 [[deps.Dagger]]
 deps = ["Colors", "DataAPI", "Distributed", "LinearAlgebra", "MemPool", "Profile", "Random", "Requires", "SentinelArrays", "Serialization", "SharedArrays", "SparseArrays", "Statistics", "StatsBase", "TableOperations", "Tables", "UUIDs"]
-path = "../Dagger.jl"
+git-tree-sha1 = "f8747b5b5b30c6dac8f61b2142a5957df31cdedd"
+repo-rev = "jps/no-clobber-sch"
+repo-url = "https://github.com/JuliaParallel/Dagger.jl"
 uuid = "d58978e5-989f-55fb-8d15-ea34adc7bf54"
-version = "0.14.0"
+version = "0.14.1"
 
 [[deps.DataAPI]]
 git-tree-sha1 = "cc70b17275652eb47bc9e5f81635981f13cea5c8"
