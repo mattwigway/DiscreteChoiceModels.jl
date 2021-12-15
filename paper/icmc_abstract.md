@@ -40,11 +40,10 @@ To help ensure algorithm correctness, `DiscreteChoiceModels.jl` has an automated
 
 Julia is designed for high-performance computing, so a major goal of `DiscreteChoiceModels.jl` is to estimate models more quickly than other modeling packages. To that end, two models were developed and benchmarked using three packages---`DiscreteChoiceModels.jl`, Biogeme [@bierlaire_short_2020], and Apollo [@hess_apollo_2019], using default settings for all three packages. The first model is the Swissmetro example from Biogeme, with 6,768 observations, 3 alternatives, and 4 free parameters. The second is a vehicle ownership model using the 2017 US National Household Travel Survey, with 129,696 observations, 5 alternatives, and 35 free parameters. All runtimes are the median of 10 runs, and executed serially on a lightly-loaded circa-2014 quad-core Intel i7 with 16GB of RAM, running Debian Linux 11.1. `DiscreteChoiceModels.jl` outperforms the other packages when used with a DataFrame; using `Dagger` is slower due to the overhead of using a distributed computing system for a small model on a single machine.
 
-Model                   DiscreteChoiceModels.jl: DataFrame    DiscreteChoiceModels.jl: Dagger   Biogeme           Apollo  
------------------       ----------------------------------    --------------------------------  -------------     ---------
-Swissmetro              188ms                                 2047ms                            252ms              824ms
-Vehicle ownership       35.1s                                 46.9s                             163.4s             227.2s
------------------       ----------------------------------    --------------------------------  -------------     ---------
+Model            | DiscreteChoiceModels.jl: DataFrame| DiscreteChoiceModels.jl: Dagger | Biogeme      | Apollo  
+-----------------|-----------------------------------|---------------------------------|--------------|---------
+Swissmetro       | 188ms                             | 2047ms                          | 252ms        | 824ms
+Vehicle ownership| 35.1s                             | 46.9s                           | 163.4s       | 227.2s
 
 Table 1: Comparison of model runtimes from `DiscreteChoiceModels.jl` and other packages. Julia runtimes include time to interpret the model specification, but not time to compile the `DiscreteChoiceModels.jl` package.
 
