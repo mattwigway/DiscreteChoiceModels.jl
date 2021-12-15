@@ -1,0 +1,83 @@
+<h1 id="discretechoicemodels.jl-high-performance-scalable-discrete-choice-models-in-julia">DiscreteChoiceModels.jl: High-performance scalable discrete choice models in Julia</h1>
+<p>Julia is a relatively new high-level dynamic programming language for numerical computing, with performance approaching C <span class="citation" data-cites="bezanson_julia_2017">(Bezanson, Edelman, Karpinski, &amp; Shah, 2017)</span>. This article introduces <code>DiscreteChoiceModels.jl</code>, a new open-source package for estimating discrete choice models in Julia.</p>
+<p><code>DiscreteChoiceModels.jl</code> is has an intuitive syntax for specifying models, allowing users to directly write out their utility functions. For instance, the code below specifies the Swissmetro example mode-choice distributed with Biogeme <span class="citation" data-cites="bierlaire_short_2020">(Bierlaire, 2020)</span>:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode julia"><code class="sourceCode julia"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">multinomial_logit</span>(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    <span class="pp">@utility</span>(<span class="cf">begin</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>        <span class="fl">1</span> <span class="op">~</span> αtrain <span class="op">+</span> βtravel_time <span class="op">*</span> TRAIN_TT <span class="op">/</span> <span class="fl">100</span> <span class="op">+</span> βcost <span class="op">*</span> (TRAIN_CO <span class="op">*</span> (GA <span class="op">==</span> <span class="fl">0</span>)) <span class="op">/</span> <span class="fl">100</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>        <span class="fl">2</span> <span class="op">~</span> αswissmetro <span class="op">+</span> βtravel_time <span class="op">*</span> SM_TT <span class="op">/</span> <span class="fl">100</span> <span class="op">+</span> βcost <span class="op">*</span> SM_CO <span class="op">*</span> (GA <span class="op">==</span> <span class="fl">0</span>) <span class="op">/</span> <span class="fl">100</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>        <span class="fl">3</span> <span class="op">~</span> αcar <span class="op">+</span> βtravel_time <span class="op">*</span> CAR_TT <span class="op">/</span> <span class="fl">100</span> <span class="op">+</span> βcost <span class="op">*</span> CAR_CO <span class="op">/</span> <span class="fl">100</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        αswissmetro <span class="op">=</span> <span class="fl">0</span>, fixed</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">end</span>),</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">:</span>CHOICE,</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>    data,</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    availability<span class="op">=</span>[</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>        <span class="fl">1</span> <span class="op">=&gt;</span> <span class="op">:</span>avtr,</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>        <span class="fl">2</span> <span class="op">=&gt;</span> <span class="op">:</span>avsm,</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>        <span class="fl">3</span> <span class="op">=&gt;</span> <span class="op">:</span>avcar,</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    ]</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>Within the utility function specification (<code>@utility</code>), the first three lines specify the utility functions for each of the three modes specified by the CHOICE variable: train, car, and the hypothetical Swissmetro. Any variable starting with α or β (easily entered in Julia as <code>\alpha</code> and <code>\beta</code>) is treated as a coefficient to be estimated, while other variables are assumed to be data columns. The final line specifies that the ASC for Swissmetro should have a starting value of 0, and be fixed rather than estimated. The remainder of the model specification indicates that the choice is indicated by the variable <code>CHOICE</code>, what data to use, and, optionally, what columns indicate availability for each alternative.</p>
+<h2 id="features">Features</h2>
+<p><code>DiscreteChoiceModels.jl</code> currently supports estimating multinomial logit models; support for nested and mixed logit models, as well as prediction, is forthcoming. All optimization methods in <code>Optim.jl</code> <span class="citation" data-cites="mogensen_optim_2018">(Mogensen &amp; Riseth, 2018)</span> are supported, including BFGS (the default), BHHH, Newton’s method, and Gradient Descent. Derivatives for optimization and for computation of variance-covariance matrices are exactly calculated using automatic differentiation <span class="citation" data-cites="revels_forward_2016">(Revels, Lubin, &amp; Papamarkou, 2016)</span>, providing both performance and accuracy improvements over finite-difference approximations. Data can be read using either <code>DataFrames.jl</code> (most common), or <code>Dagger</code>, which provides the ability to scale model estimation across multiple nodes in a compute cluster. Both backends allow scaling across cores within a single machine.</p>
+<p>To help ensure algorithm correctness, <code>DiscreteChoiceModels.jl</code> has an automated test suite that compares estimation results against ground-truth results for the same models from other software. This test suite is run automatically on each change to the <code>DiscreteChoiceModels.jl</code> source code.</p>
+<h2 id="performance">Performance</h2>
+<p>Julia is designed for high-performance computing, so a major goal of <code>DiscreteChoiceModels.jl</code> is to estimate models more quickly than other modeling packages. To that end, two models were developed and benchmarked using three packages—<code>DiscreteChoiceModels.jl</code>, Biogeme <span class="citation" data-cites="bierlaire_short_2020">(Bierlaire, 2020)</span>, and Apollo <span class="citation" data-cites="hess_apollo_2019">(Hess &amp; Palma, 2019)</span>, using default settings for all three packages. The first model is the Swissmetro example from Biogeme, with 6,768 observations, 3 alternatives, and 4 free parameters. The second is a vehicle ownership model using the 2017 US National Household Travel Survey, with 129,696 observations, 5 alternatives, and 35 free parameters. All runtimes are the median of 10 runs, and executed serially on a lightly-loaded circa-2014 quad-core Intel i7 with 16GB of RAM, running Debian Linux 11.1. <code>DiscreteChoiceModels.jl</code> outperforms the other packages when used with a DataFrame; using <code>Dagger</code> is slower due to the overhead of using a distributed computing system for a small model on a single machine.</p>
+<table>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Model</th>
+<th>DiscreteChoiceModels.jl: DataFrame</th>
+<th style="text-align: left;">DiscreteChoiceModels.jl: Dagger</th>
+<th style="text-align: left;">Biogeme</th>
+<th style="text-align: left;">Apollo</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Swissmetro</td>
+<td>188ms</td>
+<td style="text-align: left;">2047ms</td>
+<td style="text-align: left;">252ms</td>
+<td style="text-align: left;">824ms</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Vehicle ownership</td>
+<td>35.1s</td>
+<td style="text-align: left;">46.9s</td>
+<td style="text-align: left;">163.4s</td>
+<td style="text-align: left;">227.2s</td>
+</tr>
+</tbody>
+</table>
+<p>Table 1: Comparison of model runtimes from <code>DiscreteChoiceModels.jl</code> and other packages. Julia runtimes include time to interpret the model specification, but not time to compile the <code>DiscreteChoiceModels.jl</code> package.</p>
+<h2 id="scalability">Scalability</h2>
+<p>For extremely large models, a single machine may not be powerful enough to estimate the model, either due to RAM or processing constraints. Using the <code>Dagger</code> backend and Julia’s built-in distributed computing capabilities, it is possible to scale model estimation across multiple nodes in a compute cluster. This is expected to be especially valuable for computationally-intensive mixed logit models.</p>
+<p>Others have implemented this by modifications to the optimization algorithm <span class="citation" data-cites="shi_distributed_2019 gopal_distributed_2013">(Gopal &amp; Yang, 2013; Shi, Wang, &amp; Zhang, 2019)</span>. <code>DiscreteChoiceModels.jl</code> takes a simpler approach. Data are divided into chunks for each node in the cluster. For a given set of parameters, the log-likelihood of each chunk is computed. These are transmitted back to the main node where they are summed to produce the overall log-likelihood. This approach was also used by <span class="citation" data-cites="zwaenepoel_inference_2019">Zwaenepoel &amp; Van de Peer (2019)</span> in a model of gene duplication in tree species.</p>
+<h2 class="unnumbered" id="references">References</h2>
+<div id="refs" class="references csl-bib-body hanging-indent" data-line-spacing="2" role="doc-bibliography">
+<div id="ref-bezanson_julia_2017" class="csl-entry" role="doc-biblioentry">
+Bezanson, J., Edelman, A., Karpinski, S., &amp; Shah, V. B. (2017). Julia: A <span>Fresh Approach</span> to <span>Numerical Computing</span>. <em>SIAM Review</em>, <em>59</em>(1), 65–98. <a href="https://doi.org/10.1137/141000671">https://doi.org/10.1137/141000671</a>
+</div>
+<div id="ref-bierlaire_short_2020" class="csl-entry" role="doc-biblioentry">
+Bierlaire, M. (2020). <em>A short introduction to <span>PandasBiogeme</span></em> (No. TRANSP-OR 200605; p. 22). <span>Lausanne</span>: <span>Ecole Poltechnique Fédérale de Lausanne</span>. Retrieved from <span>Ecole Poltechnique Fédérale de Lausanne</span> website: <a href="https://transp-or.epfl.ch/documents/technicalReports/Bier20.pdf">https://transp-or.epfl.ch/documents/technicalReports/Bier20.pdf</a>
+</div>
+<div id="ref-gopal_distributed_2013" class="csl-entry" role="doc-biblioentry">
+Gopal, S., &amp; Yang, Y. (2013). <em>Distributed training of <span>Large</span>-scale <span>Logistic</span> models</em>. 9.
+</div>
+<div id="ref-hess_apollo_2019" class="csl-entry" role="doc-biblioentry">
+Hess, S., &amp; Palma, D. (2019). Apollo: A flexible, powerful and customisable freeware package for choice model estimation and application. <em>Journal of Choice Modelling</em>, <em>32</em>, 100170. <a href="https://doi.org/10.1016/j.jocm.2019.100170">https://doi.org/10.1016/j.jocm.2019.100170</a>
+</div>
+<div id="ref-mogensen_optim_2018" class="csl-entry" role="doc-biblioentry">
+Mogensen, P. K., &amp; Riseth, A. N. (2018). Optim: A mathematical optimization package for <span>Julia</span>. <em>Journal of Open Source Software</em>, <em>3</em>(24), 615. <a href="https://doi.org/10.21105/joss.00615">https://doi.org/10.21105/joss.00615</a>
+</div>
+<div id="ref-revels_forward_2016" class="csl-entry" role="doc-biblioentry">
+Revels, J., Lubin, M., &amp; Papamarkou, T. (2016). Forward-mode automatic differentiation in <span>J</span>ulia. <em>arXiv:1607.07892 [Cs.MS]</em>. Retrieved from <a href="https://arxiv.org/abs/1607.07892">https://arxiv.org/abs/1607.07892</a>
+</div>
+<div id="ref-shi_distributed_2019" class="csl-entry" role="doc-biblioentry">
+Shi, P., Wang, P., &amp; Zhang, H. (2019). Distributed <span>Logistic Regression</span> for <span>Separated Massive Data</span>. In H. Jin, X. Lin, X. Cheng, X. Shi, N. Xiao, &amp; Y. Huang (Eds.), <em>Big <span>Data</span></em> (pp. 285–296). <span>Singapore</span>: <span>Springer</span>. <a href="https://doi.org/10.1007/978-981-15-1899-7_20">https://doi.org/10.1007/978-981-15-1899-7_20</a>
+</div>
+<div id="ref-zwaenepoel_inference_2019" class="csl-entry" role="doc-biblioentry">
+Zwaenepoel, A., &amp; Van de Peer, Y. (2019). Inference of <span>Ancient Whole-Genome Duplications</span> and the <span>Evolution</span> of <span>Gene Duplication</span> and <span>Loss Rates</span>. <em>Molecular Biology and Evolution</em>, <em>36</em>(7), 1384–1404. <a href="https://doi.org/10.1093/molbev/msz088">https://doi.org/10.1093/molbev/msz088</a>
+</div>
+</div>
