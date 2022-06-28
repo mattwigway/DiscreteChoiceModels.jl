@@ -29,21 +29,86 @@ macro utility(ex::Expr)
     starting_values = Vector{Float64}()
     coef_indices = Dict{Symbol, Int64}()
     fixed_coefs = Dict{Symbol, Number}()
+
+    # coefficients that require simulation
+    mixed_coefs = Vector{Expr}()
+    mixed_coefnames = Vector{Symbol}()
+    mixed_coefindices = Dict{Symbol, Int64}()
+    mixed_levels = Vector{Union{Symbol, Nothing}}() # this contains the level of aggregation
+
     postwalk(ex) do subex
-        if @capture(subex, (coefnode_ = (starting_val_, fixed)))
+        if @capture(subex, coefnode_ = starting_val_)
+            (coefnode isa Symbol) && (startswith(String(coefnode), r"[αβ]")) || error("Coefficient name expected, but $coefnode found. Maybe you used = instead of ~ when defining a utility function?")
             coef = getcoef(coefnode)
-            !(starting_val isa Number) && error("Fixed starting value must be a number, for coef $coef")
-            # fixed coefficient
-            (haskey(coef_indices, coef) || haskey(fixed_coefs, coef)) && error("Coef $coef defined multiple times")
-            fixed_coefs[coef] = starting_val
-        elseif @capture(subex, coefnode_ = starting_val_)
-            coef = getcoef(coefnode)
-            !(starting_val isa Number) && error("Starting value must be a number, for coef $coef")
-            # non-fixed coefficient
-            (haskey(coef_indices, coef) || haskey(fixed_coefs, coef)) && error("Coef $coef defined multiple times")
-            push!(coefnames, coef)
-            push!(starting_values, convert(Float64, starting_val))
-            coef_indices[coef] = length(coefnames)
+            (haskey(coef_indices, coef) || haskey(fixed_coefs, coef) || haskey(mixed_coefindices, coef)) &&
+                error("Coef $coef defined multiple times")
+
+            if @capture(starting_val, (fixed_value_, fixed))
+                # fixed coefficient
+                !(fixed_val isa Number) && error("Fixed starting value must be a number, for coef $coef")
+                fixed_coefs[coef] = starting_val
+
+            elseif starting_val isa Number
+                # non-fixed coefficient
+                (haskey(coef_indices, coef) || haskey(fixed_coefs, coef)) && error("Coef $coef defined multiple times")
+                push!(coefnames, coef)
+                # TODO hacky manual conversion, use automatic promotion
+                push!(starting_values, convert(Float64, starting_val))
+                coef_indices[coef] = length(coefnames)
+
+            elseif @capture(starting_val, (distr_(dparams__) | distr_(dparams__), level=>lvlvar_))
+                # mixed coefficient (i.e. distribution)
+                n_params = length(dparams)
+                
+                # special case param names for common distributions
+                paramlabels = if distr == :(Normal) || distr == :(LogNormal)
+                    ["μ", "σ"][1:n_params] # allow mean or scale to be omitted
+                elseif distr == Uniform
+                    n_params == 0 ? String[] : ["min", "max"]
+                else
+                    ["param_$i" for i in 1:n_params]
+                end
+                
+                # arguments to the distribution function that will be in the returned function
+                distr_args = Vector{Expr}()
+
+                # now, figure out which ones were fixed
+                for (param, label) in zip(dparams, paramlabels)
+                    if @capture(param, (fixed_val_, fixed))
+                        (fixed_val isa Number) || error("Distribution fixed parameter $(coef)_$label must be number, was $fixed_val")
+                        name = Symbol("$(coef)_$label")
+                        (haskey(coef_indices, name) || haskey(fixed_coefs, name) || haskey(mixed_coefindices, name)) &&
+                            error("Coef $name defined multiple times")
+                        fixed_coefs[name] = fixed_val
+                        push!(distr_args, :($fixed_val))
+                    elseif @capture(param, exp(log_val_))
+                        (log_val isa Number) || error("Distribution parameter $(coef)_$label must be number, was $param")
+                        name = Symbol("$(coef)_ln_$label")
+                        (haskey(coef_indices, name) || haskey(fixed_coefs, name) || haskey(mixed_coefindices, name)) &&
+                            error("Coef $name defined multiple times")
+                        push!(coefnames, name)
+                        coef_indices[name] = length(coefnames)
+                        push!(starting_values, log_val)
+                        push!(distr_args, :(exp(params[$(length(coefnames))])))
+                    else
+                        (param isa Number) || error("Distribution parameter $(coef)_$label must be number, was $param")
+                        name = Symbol("$(coef)_$label")
+                        (haskey(coef_indices, name) || haskey(fixed_coefs, name) || haskey(mixed_coefindices, name)) &&
+                            error("Coef $name defined multiple times")
+                        push!(coefnames, name)
+                        coef_indices[name] = length(coefnames)
+                        push!(starting_values, param)
+                        push!(distr_args, :(params[$(length(coefnames))]))
+                    end
+                end
+
+                push!(mixed_coefs, :(params -> $(distr)($(distr_args...))))
+                push!(mixed_coefnames, coef)
+                push!(mixed_levels, lvlvar)  # will be nothing for intraindividual draws
+                mixed_coefindices[coef] = length(mixed_coefs)
+            else
+                error("Starting value must be a number or distribution, for coef $coef")
+            end
         end
 
         return subex  # make sure we don't mangle the expression while we're iterating over it
@@ -67,6 +132,8 @@ macro utility(ex::Expr)
                         elseif haskey(coef_indices, x)
                             # interpolate in reference into params array
                             return :(params[$(coef_indices[x])])
+                        elseif haskey(mixed_coefindices, x)
+                            return :(mixed_coefs[$(mixed_coefindices[x])])
                         else
                             # coef not specifically defined, create it implicitly with starting value 0
                             push!(coefnames, x)
@@ -89,7 +156,7 @@ macro utility(ex::Expr)
             end
 
             # turn alternatives into numbers for processing speed
-            push!(util_funcs, :(function (params::Vector{T}, row) where T <: Number
+            push!(util_funcs, :(function (params::Vector{T}, row, mixed_coefs::Union{Vector{T}, Nothing}=nothing) where T <: Number
                 # ensure the return value is always a T, even when the function is e.g. a constant 0
                 convert(T, @inbounds($parsed_rhs))
             end))
@@ -109,7 +176,10 @@ macro utility(ex::Expr)
             fixed_coefs = $fixed_coefs,
             utility_functions = [$(util_funcs...)],
             alt_numbers = $alt_numbers,
-            columnnames=$columns
+            columnnames=$columns,
+            mixed_coefs=[$(mixed_coefs...)],
+            mixed_coefnames=$mixed_coefnames,
+            mixed_levels=$mixed_levels
         )
     end
 end

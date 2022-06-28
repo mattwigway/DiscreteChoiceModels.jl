@@ -111,8 +111,8 @@ function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, arg
 
     #reduce(+, asyncmap(r -> loglik_for_row(r, params, args...), Tables.namedtupleiterator(table)); init=zero(T))
 
-    @floop ThreadedEx() for row in Tables.namedtupleiterator(table)
-        ll_row = loglik_for_row(row, params, args...)::T
+    @floop ThreadedEx() for (i, row) in zip(1:nrow(table), Tables.namedtupleiterator(table))
+        ll_row = loglik_for_row(i, row, params, args...)::T
         @reduce(ll += ll_row)
     end
 
@@ -121,7 +121,8 @@ end
 
 function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
     # make the vector the same as the element type of params so ForwardDiff works
-    mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.rows(table), init=zero(T))::T
+    # TODO hack - passing -1 as row number as this is only used for MNL
+    mapreduce(r -> loglik_for_row(-1, r, params, args...), +, Tables.rows(table), init=zero(T))::T
     #@time _rowwise_loglik(loglik_for_row, Tables.rows(table), params, args...)
 end
 

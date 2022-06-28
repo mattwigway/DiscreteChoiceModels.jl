@@ -32,7 +32,7 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
+function mnl_ll_row(_, row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
     util_sum = zero(T)
 
     chosen = row[chosen_col]
@@ -40,7 +40,7 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
     for (choiceidx, ufunc) in enumerate(utility_functions)
         exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
             # choice is available, either implicitly or explicitly
-            exp(ufunc(params, row))
+            exp(ufunc(params, row, nothing))
         else
             zero(T)
         end
@@ -76,9 +76,7 @@ function multinomial_logit(
     iterations=1_000
     )
 
-    # if data isa JuliaDB.AbstractIndexedTable
-    #     check_perfect_prediction(data, chosen, [utility.columnnames...])
-    # end
+    isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")    
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
     row_type = rowtype(data)

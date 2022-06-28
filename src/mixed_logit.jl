@@ -38,39 +38,41 @@ function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, d
         FunctionWrapper{T, Tuple{Int64, R, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_row),
         data, parameters, realized_coefs, utility_functions, chosen_col, avail_cols)
 
-    if isnan(ll)
-        @infiltrate
-    end
     ll
 end
 
 function mixed_ll_row(rownumber, row, params::Vector{T}, realized_coefs::Array{T, 3}, utility_functions,
         ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
     chosen = row[chosen_col]
-    prob_sum = zero(T)
+    log_prob_accumulator = LogSumExp(T)
 
     for draw in 1:size(realized_coefs)[3]
-        util_sum = zero(T)
-        local chosen_exputil::T
+        local chosen_util::T
+        logsum = LogSumExp(T)
         mixed_values = @view realized_coefs[:,rownumber,draw]  # TODO memory locality okay here?
         for (choiceidx, ufunc) in enumerate(utility_functions)
-            exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
+            util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
                 # choice is available, either implicitly or explicitly
-                exp(ufunc(params, row, mixed_values))
+                ufunc(params, row, mixed_values)
             else
-                zero(T)
+                continue
             end
 
             if choiceidx == chosen
-                chosen_exputil = exp_util
+                chosen_util = util
             end
-            util_sum += exp_util
-        end
 
-        prob_sum += chosen_exputil / util_sum
+            # we want to add the exponentiated utilities. But they may be 0 due to underflow. use logsumexp to add them,
+            # treating the utilities as the log of the xs to be added
+            fit!(logsum, util)
+        end
+        logprob = chosen_util - value(logsum) # == exp(chosen_util) / exp(value(logsum))
+        fit!(log_prob_accumulator, logprob)
     end
 
-    return log(prob_sum / size(realized_coefs)[3])
+    ll = value(log_prob_accumulator) - log(size(realized_coefs)[3])
+
+    return ll
 end
 
 function mixed_logit(
@@ -95,7 +97,6 @@ function mixed_logit(
     # Maybe there's a way to do it where we have per-observation/per-level seeds for Monte Carlo, or
     # defined offsets for the Halton sequences
     realized_draws = get_draws(nrow(data), draws, map(x -> data[!, x], utility.mixed_levels), DrawType.Halton)
-
     row_type = rowtype(data)
     obj(p::AbstractVector{T}) where T = -mixed_logit_log_likelihood(
         FunctionWrapper{T, Tuple{Vector{T}, row_type, Vector{T}}}.(utility.utility_functions),
