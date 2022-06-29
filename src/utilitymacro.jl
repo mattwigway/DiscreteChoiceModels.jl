@@ -81,15 +81,15 @@ macro utility(ex::Expr)
                             error("Coef $name defined multiple times")
                         fixed_coefs[name] = fixed_val
                         push!(distr_args, :($fixed_val))
-                    elseif @capture(param, exp(log_val_))
-                        (log_val isa Number) || error("Distribution parameter $(coef)_$label must be number, was $param")
-                        name = Symbol("$(coef)_ln_$label")
+                    elseif @capture(param, sqrt_val_^2)
+                        (sqrt_val isa Number) || error("Distribution parameter $(coef)_$label must be number, was $param")
+                        name = Symbol("$(coef)_$label^2")
                         (haskey(coef_indices, name) || haskey(fixed_coefs, name) || haskey(mixed_coefindices, name)) &&
                             error("Coef $name defined multiple times")
                         push!(coefnames, name)
                         coef_indices[name] = length(coefnames)
-                        push!(starting_values, log_val)
-                        push!(distr_args, :(exp(params[$(length(coefnames))])))
+                        push!(starting_values, sqrt_val)
+                        push!(distr_args, :(params[$(length(coefnames))]^2))
                     else
                         (param isa Number) || error("Distribution parameter $(coef)_$label must be number, was $param")
                         name = Symbol("$(coef)_$label")
@@ -169,6 +169,15 @@ macro utility(ex::Expr)
     # TODO some kind of error checking that there aren't other expressions that people meant to be
     # utility function or coefficient definitions, but didn't parse correctly
 
+    # figure out groupcol
+    groupcol = if isempty(mixed_levels) || all(isnothing.(mixed_levels))
+        nothing
+    else
+        groupcols = unique(filter(x -> !isnothing(x), mixed_levels))
+        length(groupcols) == 1 || error("Multiple levels of aggregation not supported!")
+        first(groupcols)
+    end
+
     return quote
         (
             coefnames = $coefnames,
@@ -179,7 +188,10 @@ macro utility(ex::Expr)
             columnnames=$columns,
             mixed_coefs=[$(mixed_coefs...)],
             mixed_coefnames=$mixed_coefnames,
-            mixed_levels=$mixed_levels
+            mixed_levels=$mixed_levels,
+            # cannot interpolate symbol directly or it will try to be looked up
+            # https://stackoverflow.com/questions/48272986
+            groupcol=$(groupcol isa Symbol ? Meta.quot(groupcol) : groupcol)
         )
     end
 end

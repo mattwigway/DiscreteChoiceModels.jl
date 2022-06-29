@@ -17,7 +17,7 @@ struct MixedLogitModel <: LogitModel
     # TODO log likelihood at constants
 end
 
-function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T},
+function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, groupcol, data, parameters::Vector{T},
         mixed_coefs, draws)::T where T
     # First, realize the draws using current distribution paramters
     realized_coefs = zeros(T, size(draws))
@@ -30,49 +30,54 @@ function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, d
     end
 
     # mixed_draws now contains appropriately distributed values given the current distributions
-    R = rowtype(data)
     U = typeof(utility_functions)
     C = typeof(chosen_col)
     A = typeof(avail_cols)
-    ll = rowwise_loglik(
-        FunctionWrapper{T, Tuple{Int64, R, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_row),
-        data, parameters, realized_coefs, utility_functions, chosen_col, avail_cols)
+    ll = groupwise_loglik(
+        FunctionWrapper{T, Tuple{SubDataFrame, Int64, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_group),
+        data, parameters, groupcol, realized_coefs, utility_functions, chosen_col, avail_cols)
 
     ll
 end
 
-function mixed_ll_row(rownumber, row, params::Vector{T}, realized_coefs::Array{T, 3}, utility_functions,
+function mixed_ll_group(group, rownumber, params::Vector{T}, realized_coefs::Array{T, 3}, utility_functions,
         ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
-    chosen = row[chosen_col]
-    log_prob_accumulator = LogSumExp(T)
+    probsum = LogSumExp(T)
 
     for draw in 1:size(realized_coefs)[3]
-        local chosen_util::T
-        logsum = LogSumExp(T)
-        mixed_values = @view realized_coefs[:,rownumber,draw]  # TODO memory locality okay here?
-        for (choiceidx, ufunc) in enumerate(utility_functions)
-            util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
-                # choice is available, either implicitly or explicitly
-                ufunc(params, row, mixed_values)
-            else
-                continue
+        draw_prob = zero(T)
+        for (i, row) in enumerate(Tables.namedtupleiterator(group))  # TODO some way to use namedtupleiterator without creating a new type each time?
+            logsum = LogSumExp(T)
+            # first row is rownumber, add one for each subsequent
+            mixed_values = @view realized_coefs[:,rownumber + i - 1,draw]  # TODO memory locality okay here?
+            local chosen_util::T
+            chosen = row[chosen_col]
+
+            for (choiceidx, ufunc) in enumerate(utility_functions)
+                util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
+                    # choice is available, either implicitly or explicitly
+                    ufunc(params, row, mixed_values)
+                else
+                    continue
+                end
+    
+                if choiceidx == chosen
+                    chosen_util = util
+                end
+    
+                # we want to add the exponentiated utilities. But they may be 0 due to underflow. use logsumexp to add them,
+                # treating the utilities as the log of the xs to be added
+                fit!(logsum, util)
             end
 
-            if choiceidx == chosen
-                chosen_util = util
-            end
-
-            # we want to add the exponentiated utilities. But they may be 0 due to underflow. use logsumexp to add them,
-            # treating the utilities as the log of the xs to be added
-            fit!(logsum, util)
+            # multiply all probabilities for the chooser together by summing log probabilities
+            draw_prob += chosen_util - value(logsum)
         end
-        logprob = chosen_util - value(logsum) # == exp(chosen_util) / exp(value(logsum))
-        fit!(log_prob_accumulator, logprob)
+
+        fit!(probsum, draw_prob)
     end
 
-    ll = value(log_prob_accumulator) - log(size(realized_coefs)[3])
-
-    return ll
+    value(probsum) - log(size(realized_coefs)[3])
 end
 
 function mixed_logit(
@@ -100,7 +105,7 @@ function mixed_logit(
     row_type = rowtype(data)
     obj(p::AbstractVector{T}) where T = -mixed_logit_log_likelihood(
         FunctionWrapper{T, Tuple{Vector{T}, row_type, Vector{T}}}.(utility.utility_functions),
-        Val(choice_col), avail_cols, data, p, utility.mixed_coefs, realized_draws)::T
+        Val(choice_col), avail_cols, utility.groupcol, data, p, utility.mixed_coefs, realized_draws)::T
     init_ll = -obj(utility.starting_values)
 
     @info "Simulated log-likelihood at starting values $(init_ll)"
