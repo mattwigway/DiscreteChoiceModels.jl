@@ -17,7 +17,7 @@ struct MixedLogitModel <: LogitModel
     # TODO log likelihood at constants
 end
 
-function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, groupcol, data, parameters::Vector{T},
+function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T},
         mixed_coefs, draws)::T where T
     # First, realize the draws using current distribution paramters
     realized_coefs = zeros(T, size(draws))
@@ -34,8 +34,8 @@ function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, g
     C = typeof(chosen_col)
     A = typeof(avail_cols)
     ll = groupwise_loglik(
-        FunctionWrapper{T, Tuple{SubDataFrame, Int64, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_group),
-        data, parameters, groupcol, realized_coefs, utility_functions, chosen_col, avail_cols)
+        FunctionWrapper{T, Tuple{typeof(first(data)), Int64, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_group),
+        data, parameters, realized_coefs, utility_functions, chosen_col, avail_cols)
 
     ll
 end
@@ -80,6 +80,13 @@ function mixed_ll_group(group, rownumber, params::Vector{T}, realized_coefs::Arr
     value(probsum) - log(size(realized_coefs)[3])
 end
 
+group_and_infer(data, groupcol) = group_and_infer(DataFrame(data, copycols=false))
+
+function group_and_infer(data::T, groupcol) where T <: AbstractDataFrame
+    grpd = groupby(data, groupcol)
+    [Tables.namedtupleiterator(g) for g in grpd]
+end
+
 function mixed_logit(
     utility,
     chosen,
@@ -103,9 +110,13 @@ function mixed_logit(
     # defined offsets for the Halton sequences
     realized_draws = get_draws(nrow(data), draws, map(x -> data[!, x], utility.mixed_levels), DrawType.Halton)
     row_type = rowtype(data)
+
+    # pre-group and cache NamedTupleIterators for data
+    gdata = group_and_infer(data, utility.groupcol)
+
     obj(p::AbstractVector{T}) where T = -mixed_logit_log_likelihood(
         FunctionWrapper{T, Tuple{Vector{T}, row_type, Vector{T}}}.(utility.utility_functions),
-        Val(choice_col), avail_cols, utility.groupcol, data, p, utility.mixed_coefs, realized_draws)::T
+        Val(choice_col), avail_cols, gdata, p, utility.mixed_coefs, realized_draws)::T
     init_ll = -obj(utility.starting_values)
 
     @info "Simulated log-likelihood at starting values $(init_ll)"

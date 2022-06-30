@@ -147,14 +147,13 @@ function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args..
 end
 
 # Loglikelihood computed by groups, e.g. in panel mixed logit model
-function groupwise_loglik(loglik_for_group, table, params::Vector{T}, groupcol, args...) where T
-    gdf = groupby(table, groupcol)
+function groupwise_loglik(loglik_for_group, table, params::Vector{T}, args...) where T
     ll_parts = zeros(T, Threads.nthreads())
     @sync begin
         row_number = 1
-        for group in gdf
+        for group in table
             Threads.@spawn ll_parts[Threads.threadid()] += loglik_for_group($group, $row_number, params, args...)
-            row_number += nrow(group)
+            row_number += length(group)
         end
     end
 
