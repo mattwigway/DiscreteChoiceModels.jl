@@ -114,8 +114,10 @@ function mixed_logit(
     # pre-group and cache NamedTupleIterators for data
     gdata = group_and_infer(data, utility.groupcol)
 
+    mixed_type = SubArray{E, 1, Array{E, 3}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64, Int64}, true} where E
+
     obj(p::AbstractVector{T}) where T = -mixed_logit_log_likelihood(
-        FunctionWrapper{T, Tuple{Vector{T}, row_type, AbstractVector{T}}}.(utility.utility_functions),
+        FunctionWrapper{T, Tuple{Vector{T}, row_type, mixed_type{T}}}.(utility.utility_functions),
         Val(choice_col), avail_cols, gdata, p, utility.mixed_coefs, realized_draws)::T
     init_ll = -obj(utility.starting_values)
 
