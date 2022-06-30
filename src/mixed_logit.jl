@@ -115,7 +115,7 @@ function mixed_logit(
     gdata = group_and_infer(data, utility.groupcol)
 
     obj(p::AbstractVector{T}) where T = -mixed_logit_log_likelihood(
-        FunctionWrapper{T, Tuple{Vector{T}, row_type, Vector{T}}}.(utility.utility_functions),
+        FunctionWrapper{T, Tuple{Vector{T}, row_type, AbstractVector{T}}}.(utility.utility_functions),
         Val(choice_col), avail_cols, gdata, p, utility.mixed_coefs, realized_draws)::T
     init_ll = -obj(utility.starting_values)
 

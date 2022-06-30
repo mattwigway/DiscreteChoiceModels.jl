@@ -156,7 +156,7 @@ macro utility(ex::Expr)
             end
 
             # turn alternatives into numbers for processing speed
-            push!(util_funcs, :(function (params::Vector{T}, row, mixed_coefs::Union{Vector{T}, Nothing}=nothing) where T <: Number
+            push!(util_funcs, :(function (params::Vector{T}, row, mixed_coefs::Union{AbstractVector{T}, Nothing}=nothing) where T <: Number
                 # ensure the return value is always a T, even when the function is e.g. a constant 0
                 convert(T, @inbounds($parsed_rhs))
             end))
