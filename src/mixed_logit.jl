@@ -38,7 +38,7 @@ function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, d
     C = typeof(chosen_col)
     A = typeof(avail_cols)
     ll = groupwise_loglik(
-        mixed_ll_group, #FunctionWrapper{T, Tuple{typeof(first(data)), Int64, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_group),
+        FunctionWrapper{T, Tuple{typeof(first(data)), Int64, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_group),
         data, parameters, realized_coefs, utility_functions, chosen_col, avail_cols)
 
     ll
@@ -121,7 +121,7 @@ function mixed_logit(
     mixed_type = SubArray{E, 1, Array{E, 3}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64, Int64}, true} where E
 
     obj(p::AbstractVector{T}) where T = -mixed_logit_log_likelihood(
-        utility.utility_functions,#FunctionWrapper{T, Tuple{Vector{T}, row_type, mixed_type{T}}}.(utility.utility_functions),
+        FunctionWrapper{T, Tuple{Vector{T}, row_type, mixed_type{T}}}.(utility.utility_functions),
         Val(choice_col), avail_cols, gdata, p, utility.mixed_coefs, realized_draws)::T
     init_ll = -obj(utility.starting_values)
 
