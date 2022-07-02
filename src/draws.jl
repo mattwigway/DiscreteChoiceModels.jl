@@ -4,45 +4,35 @@ These seem like they should be transposed, but they will be accessed one draw at
 Julia stores matrices in Fortran (column-major) order.
 """
 
-module DrawType @enum T Halton end
+"""
+Draws objects define methods to get draws. Methods:
 
-# Take draws per observation.
-# "Usually, different draws are taken for each observation. This procedure maintains independence over
-# decision makers of the simulated probabilities that enter [simulated log likelihood]"
-#   - Train, 2009, Discrete Choice Models with Simulation, pp. 144f
-function get_draws(nobs, ndraws, levels, type::DrawType.T)
-    draws = zeros(Float64, length(levels), nobs, ndraws)
+getdraw(Draws, coef_index, group_index, draw_index)
 
-    # fill in the columns
-    for (colidx, level) in enumerate(levels)
-        seqlength = isnothing(level) ? nobs * ndraws : length(unique(level)) * ndraws
-        raw_draws = if type == DrawType.Halton
-            # Like HaltonPoint, use the sequence of primes as bases for columns
-            # see also Bhat 2003 Simulation Estimation of Mixed Discrete Choice Models Using Randomized and Scrambled Halton Sequences
-            # for concerns about collinearity
-            Halton(prime(colidx))[1:seqlength]
-        else
-            error("unknown draw type $type (should not be possible, report at https://github.com/mattwigway/DiscreteChoiceModels.jl/issues")
-        end
+where coef_index is which random coefficient, group_index is which group
+(individual or observation), and draw_index is which draw.
 
-        if isnothing(level)
-            # TODO ensure that ordering is coming out right, this means each obs gets sequential
-            # halton draws I think
-            draws[colidx,:,:] = reshape(raw_draws, nobs, ndraws)
-        else
-            # figure out how many draws we need for this level
-            unique_levels = unique(level)
-            # an index into the unique_levels array that matches each level
-            levelidxs = collect(map(x -> findfirst(unique_levels .== x), level))
+getdraw() returns a float between 0 and 1 exclusive, which can be passed to quantile to get draws with a particular distribution.
 
-            for draw in 1:ndraws
-                raw_start = (draw - 1) * length(unique_levels) + 1
-                raw_end = raw_start + length(unique_levels) - 1
-                # Each obs get sequential halton draws I think
-                draws[colidx, :, draw] = raw_draws[raw_start:raw_end][levelidxs]
-            end
-        end
-    end
+getdraw() is pure, and should be deterministic even on different machine types (to allow for distributed computation).
+"""
+abstract type AbstractDraws end
 
-    draws
+getdraw(d::AbstractDraws, ::Int64, ::Int64, ::Int64) = error("$(typeof(d)) does not have a getdraws() function implemented")
+
+# Halton draws are very simple, no configurable parameters
+struct HaltonDraws <: AbstractDraws
+    sequences::Vector{Halton}
+    n_draws::Int64
+    intra::BitVector  # are they intra or inter-individual draws
 end
+
+HaltonDraws(n_columns::Integer, n_draws, intra) = HaltonDraws(collect(map(Halton ∘ prime, 1:n_columns)), n_draws, intra)
+
+# match order from apollo: Individual/obs 1 has halton draws [1:ndraws], 2 has [ndraws + 1:2*ndraws]
+function getdraw(draws::HaltonDraws, coef_index, row_index, group_index, draw_index)
+    offset_rows = draws.intra[coef_index] ? row_index : group_index
+    draws.sequences[coef_index][draws.n_draws * (offset_rows - 1) + draw_index]
+end
+
+ndraws(d::HaltonDraws) = d.n_draws

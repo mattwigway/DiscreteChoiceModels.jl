@@ -83,7 +83,7 @@ macro utility(ex::Expr)
                         push!(distr_args, :($fixed_val))
                     elseif @capture(param, sqrt_val_^2)
                         (sqrt_val isa Number) || error("Distribution parameter $(coef)_$label must be number, was $param")
-                        name = Symbol("$(coef)_$label^2")
+                        name = Symbol("$(coef)_sqrt($label)")
                         (haskey(coef_indices, name) || haskey(fixed_coefs, name) || haskey(mixed_coefindices, name)) &&
                             error("Coef $name defined multiple times")
                         push!(coefnames, name)

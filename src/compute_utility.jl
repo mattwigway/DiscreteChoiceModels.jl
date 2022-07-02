@@ -151,8 +151,8 @@ function groupwise_loglik(loglik_for_group, table, params::Vector{T}, args...) w
     ll_parts = zeros(T, Threads.nthreads())
     @sync begin
         row_number = 1
-        for group in table
-            Threads.@spawn ll_parts[Threads.threadid()] += loglik_for_group($group, $row_number, params, args...)
+        for (groupnumber, group) in enumerate(table)
+            Threads.@spawn ll_parts[Threads.threadid()] += loglik_for_group($group, $row_number, $groupnumber, params, args...)
             row_number += length(group)
         end
     end

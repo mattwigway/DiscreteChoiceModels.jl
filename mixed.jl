@@ -22,10 +22,9 @@ function main(data)
         :choice,
         data,
         verbose=:medium,
-        se=false,
         draws=500
     )
 end
 
 model = main(get_data())
-#println(summary(model))
+println(summary(model))
