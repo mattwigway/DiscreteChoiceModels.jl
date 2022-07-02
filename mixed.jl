@@ -28,4 +28,4 @@ function main(data)
 end
 
 model = main(get_data())
-println(summary(model))
+#println(summary(model))

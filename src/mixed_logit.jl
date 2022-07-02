@@ -25,8 +25,12 @@ function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, d
     for (cidx, mixed_coef) in enumerate(mixed_coefs)
         distr = mixed_coef(parameters)::UnivariateDistribution
         # Halton points are between 0 and 1. Calling quantile will convert them to points that are
-        # distributed according to the distribution 
-        realized_coefs[cidx,:,:] = quantile.(distr, draws[cidx,:,:])
+        # distributed according to the distribution
+        Threads.@threads for i in 1:size(realized_coefs, 2)
+            for j in 1:size(realized_coefs, 3)
+                realized_coefs[cidx,i,j] = quantile(distr, draws[cidx,i,j])
+            end
+        end
     end
 
     # mixed_draws now contains appropriately distributed values given the current distributions
@@ -34,7 +38,7 @@ function mixed_logit_log_likelihood(utility_functions, chosen_col, avail_cols, d
     C = typeof(chosen_col)
     A = typeof(avail_cols)
     ll = groupwise_loglik(
-        FunctionWrapper{T, Tuple{typeof(first(data)), Int64, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_group),
+        mixed_ll_group, #FunctionWrapper{T, Tuple{typeof(first(data)), Int64, Vector{T}, Array{T, 3}, U, C, A}}(mixed_ll_group),
         data, parameters, realized_coefs, utility_functions, chosen_col, avail_cols)
 
     ll
@@ -117,7 +121,7 @@ function mixed_logit(
     mixed_type = SubArray{E, 1, Array{E, 3}, Tuple{Base.Slice{Base.OneTo{Int64}}, Int64, Int64}, true} where E
 
     obj(p::AbstractVector{T}) where T = -mixed_logit_log_likelihood(
-        FunctionWrapper{T, Tuple{Vector{T}, row_type, mixed_type{T}}}.(utility.utility_functions),
+        utility.utility_functions,#FunctionWrapper{T, Tuple{Vector{T}, row_type, mixed_type{T}}}.(utility.utility_functions),
         Val(choice_col), avail_cols, gdata, p, utility.mixed_coefs, realized_draws)::T
     init_ll = -obj(utility.starting_values)
 
