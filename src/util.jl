@@ -26,6 +26,14 @@ function SplittablesBase.halve(rows::Tables.NamedTupleIterator{schema}) where sc
     )
 end
 
+"""
+When zipping the row numbers with the table numbers, we run into an error:
+ERROR: LoadError: MethodError: no method matching shape(::Tables.NamedTupleIterator{...})
+This is used when splitting a Zip to check that all parts of the zip have the same length,
+as this is not required in base Julia.
+"""
+SplittablesBase.Implementations.shape(rows::Tables.NamedTupleIterator) = size(rows)
+
 function consistent_rowcount(cols)
     len = length(cols[1])
     if !all(c -> length(c) == len, cols)

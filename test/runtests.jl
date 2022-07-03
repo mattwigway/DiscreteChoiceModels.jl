@@ -1,9 +1,10 @@
 # Run tests
 
-using SafeTestsets
-using Test
-using DiscreteChoiceModels
-using MacroTools
+using SafeTestsets, Test, DiscreteChoiceModels, MacroTools, OnlineStats, CSV, DataFrames, StatsBase
+
+@testset "Mixed logit" begin
+    include("mixed/mixed.jl")
+end
 
 @testset "Multinomial logit" begin
     include("mnl/mnl.jl")

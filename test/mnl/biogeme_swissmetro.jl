@@ -63,4 +63,5 @@
 
     @test round(loglikelihood(model), digits=3) ≈ -5331.252
     @test round(model.init_ll, digits=3) ≈ -6964.663
+    @test round(nullloglikelihood(model), digits=3) ≈ -5864.998
 end

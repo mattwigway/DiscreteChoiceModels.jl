@@ -8,6 +8,7 @@ struct MultinomialLogitModel <: LogitModel
     coefs::Vector{Float64}
     vcov::Matrix{Float64}
     init_ll::Float64
+    const_ll::Float64
     final_ll::Float64
     # TODO log likelihood at constants
 end
@@ -40,7 +41,7 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
     for (choiceidx, ufunc) in enumerate(utility_functions)
         exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
             # choice is available, either implicitly or explicitly
-            exp(ufunc(params, row))
+            exp(ufunc(params, row, nothing))
         else
             zero(T)
         end
@@ -73,21 +74,34 @@ function multinomial_logit(
     method=BFGS(),
     se=true,
     verbose=:no,
-    iterations=1_000
+    iterations=1_000,
+    include_ll_const=true
     )
 
-    # if data isa JuliaDB.AbstractIndexedTable
-    #     check_perfect_prediction(data, chosen, [utility.columnnames...])
-    # end
+    isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")    
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
     row_type = rowtype(data)
     obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(
-        FunctionWrapper{T, Tuple{Vector{T}, row_type}}.(utility.utility_functions),
+        FunctionWrapper{T, Tuple{Vector{T}, row_type, Nothing}}.(utility.utility_functions),
         Val(choice_col), avail_cols, data, p)::T
     init_ll = -obj(utility.starting_values)
 
     @info "Log-likelihood at starting values $(init_ll)"
+
+    ll_const = if include_ll_const
+        @info "Calculating log-likelihood at constants"
+        util_const = constant_utility(utility)
+        # Loglikelihood at constants for a mixed logit is just a multinomial logit
+        const_model = with_logger(NullLogger()) do
+            multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false, include_ll_const=false)
+        end
+        ll_const = loglikelihood(const_model)
+        @info "Log-likelihood at constants: $(ll_const)"
+        ll_const
+    else
+        NaN
+    end
 
     results = optimize(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
@@ -97,8 +111,8 @@ function multinomial_logit(
     )
 
     if !Optim.converged(results)
-        @error "Failed to converge!"
-        #throw(ConvergenceException(Optim.iterations(results)))
+        #@error "Failed to converge!"
+        throw(ConvergenceException(Optim.iterations(results)))
     else
         @info "Optimization converged successfully after $(Optim.iterations(results)) iterations"
     end
@@ -140,16 +154,17 @@ function multinomial_logit(
         vcov = fill(NaN, length(final_coefs), length(final_coefs))
     end
 
-    return MultinomialLogitModel(final_coefnames, final_coefs, vcov, init_ll, final_ll)
+    return MultinomialLogitModel(final_coefnames, final_coefs, vcov, init_ll, ll_const, final_ll)
 end
 
 function Base.summary(res::MultinomialLogitModel)
-    mcfadden = 1 - res.final_ll / res.init_ll
+    mcfadden = 1 - loglikelihood(res) / nullloglikelihood(res)
     header = """
 Multinomial logit model
 Initial log-likelhood (at starting values): $(res.init_ll)
-Final log-likelihood: $(res.final_ll)
-McFadden's pseudo-R2 (relative to starting values): $mcfadden
+Log-likelihood at constants: $(nullloglikelihood(res))
+Final log-likelihood: $(loglikelihood(res))
+McFadden's pseudo-R2 (relative to constants): $mcfadden
 """
 
     vc = vcov(res)

@@ -122,7 +122,6 @@ end
 function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
     # make the vector the same as the element type of params so ForwardDiff works
     mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.rows(table), init=zero(T))::T
-    #@time _rowwise_loglik(loglik_for_row, Tables.rows(table), params, args...)
 end
 
 #=
@@ -143,4 +142,18 @@ function rowwise_loglik(loglik_for_row, table::DTable, params::Vector{T}, args..
     end
 
     fetch(Dagger.spawn(+, ll_parts...))
+end
+
+# Loglikelihood computed by groups, e.g. in panel mixed logit model
+function groupwise_loglik(loglik_for_group, table, params::Vector{T}, args...) where T
+    ll_parts = zeros(T, Threads.nthreads())
+    @sync begin
+        row_number = 1
+        for (groupnumber, group) in enumerate(table)
+            Threads.@spawn ll_parts[Threads.threadid()] += loglik_for_group($group, $row_number, $groupnumber, params, args...)
+            row_number += length(group)
+        end
+    end
+
+    sum(ll_parts)
 end

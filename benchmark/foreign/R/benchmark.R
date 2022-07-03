@@ -18,3 +18,4 @@ benchmark = function (file, func=median, invocations=10) {
 
 benchmark("biogeme_swissmetro.R")
 benchmark("nhts.R")
+benchmark("apollo_mixed.R")
