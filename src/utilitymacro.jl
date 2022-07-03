@@ -83,7 +83,7 @@ macro utility(ex::Expr)
                         push!(distr_args, :($fixed_val))
                     elseif @capture(param, exp(log_val_))
                         (log_val isa Number) || error("Distribution parameter $(coef)_$label must be number, was $param")
-                        name = Symbol("$(coef)_log($label)")
+                        name = Symbol("$(coef)_log_$label")
                         (haskey(coef_indices, name) || haskey(fixed_coefs, name) || haskey(mixed_coefindices, name)) &&
                             error("Coef $name defined multiple times")
                         push!(coefnames, name)
