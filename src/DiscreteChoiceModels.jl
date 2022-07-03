@@ -1,7 +1,7 @@
 module DiscreteChoiceModels
 
 using OnlineStats, Tables, Printf, Statistics, LinearAlgebra, DataFrames, Dagger, ForwardDiff, FLoops, SplittablesBase,
-    Distributions, HaltonSequences, Primes
+    Distributions, HaltonSequences, Primes, Logging
 import FunctionWrappers: FunctionWrapper
 
 include("LogitModel.jl")

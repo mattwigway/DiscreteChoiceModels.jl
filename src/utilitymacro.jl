@@ -196,6 +196,29 @@ macro utility(ex::Expr)
     end
 end
 
+# return a copy of the passed utility object that 
+function constant_utility(utility)
+    coefnames = fill(:unnamed, length(utility.alt_numbers) - 1)
+    for (k, v) in utility.alt_numbers
+        if v > 1
+            coefnames[v - 1] = Symbol("α$k")
+        end
+    end
+
+    return (
+        coefnames=coefnames,
+        starting_values=zeros(eltype(utility.starting_values), length(utility.utility_functions) - 1),
+        fixed_coefs=Float64[],
+        utility_functions=[(_, _, _) -> 0, [(x, _, _) -> x[i] for i in 1:(length(utility.utility_functions) - 1)]...],
+        alt_numbers=utility.alt_numbers,
+        columns=Set([]),
+        mixed_coefs=[],
+        mixed_coefnames=[],
+        mixed_levels=[],
+        groupcol=nothing
+    )
+end
+
 """
 Create betas for all of the names in the vector
 """

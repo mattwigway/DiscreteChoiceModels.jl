@@ -11,6 +11,7 @@ struct MixedLogitModel <: LogitModel
     mixed_coefs::Vector{UnivariateDistribution}
     vcov::Matrix{Float64}
     init_ll::Float64
+    const_ll::Float64
     final_ll::Float64
     draws::AbstractDraws
     # TODO log likelihood at constants
@@ -119,6 +120,15 @@ function mixed_logit(
 
     @info "Simulated log-likelihood at starting values $(init_ll)"
 
+    @info "Calculating log-likelihood at constants"
+    util_const = constant_utility(utility)
+    # Loglikelihood at constants for a mixed logit is just a multinomial logit
+    const_model = with_logger(NullLogger()) do
+        multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false)
+    end
+    ll_const = loglikelihood(const_model)
+    @info "Log-likelihood at constants: $(ll_const)"
+
     results = optimize(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
         copy(utility.starting_values),
@@ -127,8 +137,7 @@ function mixed_logit(
     )
 
     if !Optim.converged(results)
-        @error "Failed to converge!"
-        #throw(ConvergenceException(Optim.iterations(results)))
+        throw(ConvergenceException(Optim.iterations(results)))
     else
         @info "Optimization converged successfully after $(Optim.iterations(results)) iterations"
     end
@@ -171,19 +180,19 @@ function mixed_logit(
     end
 
     return MixedLogitModel(final_coefnames, final_coefs, utility.mixed_coefnames, map(x -> x(params), utility.mixed_coefs),
-        vcov, init_ll, final_ll, drawsobj)
+        vcov, init_ll, ll_const, final_ll, drawsobj)
 end
-
 
 ndraws(m::MixedLogitModel) = ndraws(m.draws)
 drawtype(m::MixedLogitModel) = typeof(m.draws)
 
 function Base.summary(res::MixedLogitModel)
-    mcfadden = 1 - res.final_ll / res.init_ll
+    mcfadden = 1 - loglikelihood(res) / nullloglikelihood(res)
     header = """
 Mixed logit model
 Initial simulated log-likelhood (at starting values): $(res.init_ll)
-Final simulated log-likelihood: $(res.final_ll)
+Log-likelihood at constant: $(nullloglikelihood(res))
+Final simulated log-likelihood: $(loglikelihood(res))
 $(ndraws(res)) $(drawtype(res)) draws
 McFadden's pseudo-R2 (relative to starting values): $mcfadden
 """

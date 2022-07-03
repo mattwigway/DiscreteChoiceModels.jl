@@ -44,4 +44,8 @@ in_confint(coef, coef2, se2) = coef > coef2 - 1.96 * se2 && coef < coef2 + 1.96 
     @test in_confint(exp(coefs[:βhw_log_σ]), 0.8163, 0.11757)
     @test in_confint(coefs[:βch_μ], 0.6234, 0.07391)
     @test in_confint(exp(coefs[:βch_log_σ]), 0.8263, 0.12050)
+
+    @test loglikelihood(model) > -1445 && loglikelihood(model) < -1440
+    @test isapprox(model.init_ll, -2253.78, rtol=0.01)
+    @test isapprox(nullloglikelihood(model), -2420.39, rtol=0.01)
 end
