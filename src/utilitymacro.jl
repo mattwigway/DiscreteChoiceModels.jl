@@ -45,8 +45,8 @@ macro utility(ex::Expr)
 
             if @capture(starting_val, (fixed_value_, fixed))
                 # fixed coefficient
-                !(fixed_val isa Number) && error("Fixed starting value must be a number, for coef $coef")
-                fixed_coefs[coef] = starting_val
+                !(fixed_value isa Number) && error("Fixed starting value must be a number, for coef $coef")
+                fixed_coefs[coef] = fixed_value
 
             elseif starting_val isa Number
                 # non-fixed coefficient

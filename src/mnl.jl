@@ -32,7 +32,7 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(_, row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
     util_sum = zero(T)
 
     chosen = row[chosen_col]
