@@ -9,6 +9,8 @@ Support is planned for:
 - Nested logit
 - Mixed logit
 
+At this point, the package should be considered experimental.
+
 The package allows specifying discrete choice models using an intuitive, expressive syntax. For instance, the following code reproduces [Biogeme's multinomial logit model](https://biogeme.epfl.ch/examples/swissmetro/01logit.html) in 28 lines of code, vs. 65 for the Biogeme example:
 
 ```julia
