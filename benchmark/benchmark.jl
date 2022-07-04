@@ -6,7 +6,7 @@ Benchmark simple models
 
 using DiscreteChoiceModels, CSV, DataFrames, BenchmarkTools, Logging, Dagger, Distributed, CodecZlib
 
-const SAMPLES = 10
+const SAMPLES = 5
 
 get_test_file_path(file) = joinpath(Base.source_dir(), "../test/data/", file)
 
@@ -184,13 +184,52 @@ function benchmark_mnl_nhts_macroexpand()
             evals=1)
 end
 
+function benchmark_mixed_apollo()
+    data = CSV.read(joinpath(Base.source_dir(), "../test/data/apollo_swissRouteChoiceData.csv"), DataFrame)
+    @benchmarkable(mixed_logit(
+        @utility(begin
+            1 ~ -βtt * tt1 + -βtc * tc1 + -βhw * hw1 + -βch * ch1
+            2 ~ -βtt * tt2 + -βtc * tc2 + -βhw * hw2 + -βch * ch2
+
+            βtt = LogNormal(-3, exp(-4.6052)), level=>ID
+            βtc = LogNormal(-3, exp(-4.6052)), level=>ID
+            βhw = LogNormal(-3, exp(-4.6052)), level=>ID
+            βch = LogNormal(-3, exp(-4.6052)), level=>ID
+        end),
+        :choice,
+        $data,
+        verbose=:medium,
+        draws=500
+    ),
+    samples=SAMPLES,
+    evals=1,
+    seconds=1e6
+    )
+end
+
+function benchmark_mixed_apollo_macroexpand()
+    @benchmarkable(@macroexpand(
+        @utility(begin
+            1 ~ -βtt * tt1 + -βtc * tc1 + -βhw * hw1 + -βch * ch1
+            2 ~ -βtt * tt2 + -βtc * tc2 + -βhw * hw2 + -βch * ch2
+
+            βtt = LogNormal(-3, exp(-4.6052)), level=>ID
+            βtc = LogNormal(-3, exp(-4.6052)), level=>ID
+            βhw = LogNormal(-3, exp(-4.6052)), level=>ID
+            βch = LogNormal(-3, exp(-4.6052)), level=>ID
+        end),
+        samples=SAMPLES,
+        seconds=1e6,
+        evals=1
+    ))
+end
+
 function should_run(benchmark_name)
     run = length(ARGS) == 0 || benchmark_name in ARGS
     # INFO level debugging is disabled. If I were fancy I'd filter log messages by module, but... I'm not
     run || @warn "skipping benchmark $benchmark_name"
     return run
 end
-
 
 function main()
     "--verbose" in ARGS || Logging.disable_logging(Logging.Info)
@@ -202,7 +241,8 @@ function main()
     should_run("MNL_NHTS_DTable") && (suite["MNL_NHTS_DTable"] = benchmark_mnl_nhts_dtable())
     should_run("MNL_NHTS_DataFrame") && (suite["MNL_NHTS_DataFrame"] = benchmark_mnl_nhts_dataframe())
     should_run("MNL_NHTS_macroexpand") && (suite["MNL_NHTS_macroexpand"] = benchmark_mnl_nhts_macroexpand())
-
+    should_run("Mixed_Apollo_DataFrame") && (suite["Mixed_Apollo"] = benchmark_mixed_apollo())
+    should_run("Mixed_Apollo_macroexpand") && (suite["Mixed_Apollo"] = benchmark_mixed_apollo_macroexpand())
 
     #tune!(suite)
     results = run(suite, verbose=true)
