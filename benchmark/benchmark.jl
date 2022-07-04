@@ -256,7 +256,7 @@ addprocs()
 @everywhere begin
     using Pkg
     Pkg.activate(Base.source_dir())
-    using DiscreteChoiceModels
+    using DiscreteChoiceModels, InlineStrings
 end
 
 main()
