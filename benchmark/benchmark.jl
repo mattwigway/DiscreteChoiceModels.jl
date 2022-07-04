@@ -217,11 +217,11 @@ function benchmark_mixed_apollo_macroexpand()
             βtc = LogNormal(-3, exp(-4.6052)), level=>ID
             βhw = LogNormal(-3, exp(-4.6052)), level=>ID
             βch = LogNormal(-3, exp(-4.6052)), level=>ID
-        end),
+        end)),
         samples=SAMPLES,
         seconds=1e6,
         evals=1
-    ))
+    )
 end
 
 function should_run(benchmark_name)
