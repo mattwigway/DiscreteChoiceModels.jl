@@ -17,7 +17,8 @@ The package allows specifying discrete choice models using an intuitive, express
 using DiscreteChoiceModels, CSV, DataFrames
 
 # read and filter data, and create binary availability columns
-data = CSV.read("swissmetro.dat", DataFrame, delim='\t')
+data = CSV.read(replace(pathof(DiscreteChoiceModels), "src/DiscreteChoiceModels.jl" => "") * "/test/data/biogeme_swissmetro.dat", DataFrame, delim='\t')
+
 data = data[in.(data.PURPOSE, [Set([1, 3])]) .& (data.CHOICE .!= 0), :]
 
 data.avtr = (data.TRAIN_AV .== 1) .& (data.SP .!= 0)
