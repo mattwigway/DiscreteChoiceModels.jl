@@ -70,3 +70,5 @@ If one choice outcome should not have any values in its utility function (i.e. i
 ## Performance
 
 It's good. (Benchmarks to come.)
+
+`DiscreteChoiceModels` is designed to support multithreading to increase performance. Recently, the [Julia developers announced](https://julialang.org/blog/2023/07/PSA-dont-use-threadid/) that a previously-recommended pattern for multithreading software is no longer safe with the latest Julia versions. Until DiscreteChoiceModels is re-written to avoid this pattern, it is recommended that mixed logit models not use multithreading.
