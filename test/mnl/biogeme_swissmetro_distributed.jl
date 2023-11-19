@@ -8,6 +8,7 @@ Distributed.@everywhere begin
 end
 
 @everywhere using Dagger, DiscreteChoiceModels
+@everywhere import DTables: DTable
 
 @testset "Biogeme swissmetro distributed" begin
     using Dagger
@@ -15,6 +16,8 @@ end
     using Test
     using StatsBase
     using CSV
+    import DTables: DTable
+
 
     @test length(workers()) == 4
 
