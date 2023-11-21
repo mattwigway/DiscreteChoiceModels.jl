@@ -36,25 +36,27 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols, ::Val{n_alts})::T where {T <: Number, chosen_col, n_alts}
     chosen = row[chosen_col]
 
-    avail = MVector{n_alts, Bool}(undef)
-    fill!(avail, false)
-    utils = MVector{n_alts, T}(undef)
-    fill!(utils, zero(T))
+    logsum = LogSumExp(T)
 
-    local chosen_exputil::T
+    chosen_util = zero(T)
+    found_chosen = false
     for (choiceidx, ufunc) in enumerate(utility_functions)
-        avail[choiceidx] = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
-        if avail[choiceidx]
-            utils[choiceidx] = ufunc(params, row, nothing)
+        avail = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
+        if avail
+            util = ufunc(params, row, nothing)
+            fit!(logsum, util)
+
+            if chosen == choiceidx
+                found_chosen = true
+                chosen_util = util
+            end
         end
+
+        found_chosen || error("Chosen value not available")
     end
 
-    # TODO:PERF could move this check to prepare_data, so it's not run every time likelihood function is 
-    # evaluated
-    avail[chosen] || error("Chosen value is not available")
-
     # calculate log-probability directly, no numerical errors
-    utils[chosen] - logsumexp(@view utils[avail])
+    chosen_util - value(logsum)
 end
 
 function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T}) where T
