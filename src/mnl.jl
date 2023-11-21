@@ -40,7 +40,6 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
     local chosen_exputil::T
     for (choiceidx, ufunc) in enumerate(utility_functions)
         exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
-            # choice is available, either implicitly or explicitly
             exp(ufunc(params, row, nothing))
         else
             zero(T)
@@ -170,7 +169,7 @@ McFadden's pseudo-R2 (relative to constants): $mcfadden
     vc = vcov(res)
     # nan variance in fixed params
     if !all(filter(x->!isnan(x), diag(vc)) .≥ 0)
-        @error "Some estimated variances are negative, not showing std. errors!"
+        @error "Some estimated variances are negative, not showing std. errors! Your model is likely not identified."
         ses = diag(vc)
         pval = fill(NaN, length(ses))
         selab = "Var"

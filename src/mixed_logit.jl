@@ -200,7 +200,7 @@ McFadden's pseudo-R2 (relative to starting values): $mcfadden
     vc = vcov(res)
     # nan variance in fixed params
     if !all(filter(x->!isnan(x), diag(vc)) .≥ 0)
-        @error "Some estimated variances are negative, not showing std. errors!"
+        @error "Some estimated variances are negative, not showing std. errors! Your model is likely not identified."
         ses = diag(vc)
         pval = fill(NaN, length(ses))
         selab = "Var"
