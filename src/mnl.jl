@@ -59,6 +59,10 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
     found_chosen || error("Chosen value not available. Row: $row")
 
     # calculate log-probability directly, no numerical errors
+    # the probability is e^V_{chosen} / \sum_i e^{V_i}, i, chosen ∈ available.
+    # the log probability, then, is ln e^V_{chosen} - ln \sum_i e^{V_i} by log rules, which further
+    # simplifies to V_{chosen} - ln \sum_i e^{V_i}. LogSumExp uses various tricks to
+    # calculate the logsum directly without overflow, and then we just subtract from the chosen utility.
     chosen_util - value(logsum)
 end
 
