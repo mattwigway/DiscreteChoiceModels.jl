@@ -4,6 +4,8 @@ using OnlineStats, Tables, Printf, Statistics, LinearAlgebra, DataFrames, Dagger
     Distributions, HaltonSequences, Primes, Logging
 import FunctionWrappers: FunctionWrapper
 import DTables: DTable
+import StaticArrays: MVector
+import LogExpFunctions: logsumexp
 
 include("LogitModel.jl")
 include("util.jl")

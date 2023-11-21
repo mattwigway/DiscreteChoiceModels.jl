@@ -33,25 +33,28 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
-    util_sum = zero(T)
-
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols, ::Val{n_alts})::T where {T <: Number, chosen_col, n_alts}
     chosen = row[chosen_col]
+
+    avail = MVector{n_alts, Bool}(undef)
+    fill!(avail, false)
+    utils = MVector{n_alts, T}(undef)
+    fill!(utils, zero(T))
+
     local chosen_exputil::T
     for (choiceidx, ufunc) in enumerate(utility_functions)
-        exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
-            exp(ufunc(params, row, nothing))
-        else
-            zero(T)
+        avail[choiceidx] = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
+        if avail[choiceidx]
+            utils[choiceidx] = ufunc(params, row, nothing)
         end
-
-        if choiceidx == chosen
-            chosen_exputil = exp_util
-        end
-        util_sum += exp_util
     end
 
-    log(chosen_exputil / util_sum)
+    # TODO:PERF could move this check to prepare_data, so it's not run every time likelihood function is 
+    # evaluated
+    avail[chosen] || error("Chosen value is not available")
+
+    # calculate log-probability directly, no numerical errors
+    utils[chosen] - logsumexp(@view utils[avail])
 end
 
 function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T}) where T
@@ -60,9 +63,10 @@ function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_c
     U = typeof(utility_functions)
     C = typeof(chosen_col)
     A = typeof(avail_cols)
+    N = Val(length(utility_functions))
     rowwise_loglik(
-        FunctionWrapper{T, Tuple{R, Vector{T}, U, C, A}}(mnl_ll_row),
-        data, parameters, utility_functions, chosen_col, avail_cols)
+        FunctionWrapper{T, Tuple{R, Vector{T}, U, C, A, typeof(N)}}(mnl_ll_row),
+        data, parameters, utility_functions, chosen_col, avail_cols, N)
 end
 
 function multinomial_logit(
