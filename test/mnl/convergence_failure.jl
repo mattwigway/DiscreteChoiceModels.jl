@@ -1,4 +1,4 @@
-@testset "Convergence failure" begin
+@testitem "Convergence failure" begin
 
     using DataFrames
     using DiscreteChoiceModels

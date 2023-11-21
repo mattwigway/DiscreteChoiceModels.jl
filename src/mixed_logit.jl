@@ -2,8 +2,6 @@
 Estimation routines for a mixed logit model.
 =#
 
-using Infiltrator
-
 struct MixedLogitModel <: LogitModel
     coefnames::Vector{Symbol}
     coefs::Vector{Float64}
@@ -53,7 +51,7 @@ function mixed_ll_group(group, rownumber, groupnumber, params::Vector{T}, random
             end
 
             for (choiceidx, ufunc) in enumerate(utility_functions)
-                util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
+                util = if isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
                     # choice is available, either implicitly or explicitly
                     ufunc(params, row, mixed_values)
                 else
@@ -200,7 +198,7 @@ McFadden's pseudo-R2 (relative to starting values): $mcfadden
     vc = vcov(res)
     # nan variance in fixed params
     if !all(filter(x->!isnan(x), diag(vc)) .≥ 0)
-        @error "Some estimated variances are negative, not showing std. errors!"
+        @error "Some estimated variances are negative, not showing std. errors! Your model is likely not identified."
         ses = diag(vc)
         pval = fill(NaN, length(ses))
         selab = "Var"

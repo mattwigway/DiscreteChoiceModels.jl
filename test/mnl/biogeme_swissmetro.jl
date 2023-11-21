@@ -1,7 +1,7 @@
 # Replicate the Biogeme Swissmetro example
 # https://biogeme.epfl.ch/examples/swissmetro/01logit.html
 
-@testset "Biogeme swissmetro" begin
+@testitem "Biogeme swissmetro" begin
     using CSV
     using DataFrames
     using DiscreteChoiceModels

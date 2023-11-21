@@ -3,6 +3,7 @@ module DiscreteChoiceModels
 using OnlineStats, Tables, Printf, Statistics, LinearAlgebra, DataFrames, Dagger, ForwardDiff, FLoops, SplittablesBase,
     Distributions, HaltonSequences, Primes, Logging
 import FunctionWrappers: FunctionWrapper
+import DTables: DTable
 
 include("LogitModel.jl")
 include("util.jl")

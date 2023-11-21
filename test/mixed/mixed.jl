@@ -1,6 +1,8 @@
-in_confint(coef, coef2, se2) = coef > coef2 - 1.96 * se2 && coef < coef2 + 1.96 * se2
+@testitem "Apollo route choice" begin
+    using CSV, DataFrames, Distributions, StatsBase
 
-@testset "Apollo route choice" begin
+    in_confint(coef, coef2, se2) = coef > coef2 - 1.96 * se2 && coef < coef2 + 1.96 * se2
+
     # The route choice mixed logit example model from Apollo
     # http://www.apollochoicemodelling.com/files/examples/6%20Mixture%20models/MMNL_preference_space.r
     # http://www.apollochoicemodelling.com/files/examples/6%20Mixture%20models/output/MMNL_preference_space_output.txt

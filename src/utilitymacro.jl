@@ -158,7 +158,7 @@ macro utility(ex::Expr)
             # turn alternatives into numbers for processing speed
             push!(util_funcs, :(function (params::Vector{T}, row, mixed_coefs::Union{AbstractVector{T}, Nothing}=nothing) where T <: Number
                 # ensure the return value is always a T, even when the function is e.g. a constant 0
-                convert(T, @inbounds($parsed_rhs))
+                convert(T, $parsed_rhs)
             end))
             alt_numbers[lhs] = length(util_funcs)
         end

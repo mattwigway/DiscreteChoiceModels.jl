@@ -22,6 +22,9 @@ function extract_namedtuple_bool(nt, ::Val{key})::Bool where key
 end
 
 #=
+This directly calculate the loglikelihood for a single row, working in logarithmic space throughout to avoid overflows
+    (h/t Sam Zhang).
+
 Much work has gone into optimizing this to have zero allocations. Key optimizations:
 - chosen_col is passed as a Val, so the column name is dispatched on. This means that the compiler knows which
   column will be used for chosen at compile time, and since it knows column types (from the type of NamedTuple row)
@@ -34,25 +37,33 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
   necessary inside a function.
 =#
 function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
-    util_sum = zero(T)
-
     chosen = row[chosen_col]
-    local chosen_exputil::T
-    for (choiceidx, ufunc) in enumerate(utility_functions)
-        exp_util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
-            # choice is available, either implicitly or explicitly
-            exp(ufunc(params, row, nothing))
-        else
-            zero(T)
-        end
 
-        if choiceidx == chosen
-            chosen_exputil = exp_util
+    logsum = LogSumExp(T)
+
+    chosen_util = zero(T)
+    found_chosen = false
+    for (choiceidx, ufunc) in enumerate(utility_functions)
+        avail = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
+        if avail
+            util = ufunc(params, row, nothing)
+            fit!(logsum, util)
+
+            if chosen == choiceidx
+                found_chosen = true
+                chosen_util = util
+            end
         end
-        util_sum += exp_util
     end
 
-    log(chosen_exputil / util_sum)
+    found_chosen || error("Chosen value not available. Row: $row")
+
+    # calculate log-probability directly, no numerical errors
+    # the probability is e^V_{chosen} / \sum_i e^{V_i}, i, chosen ∈ available.
+    # the log probability, then, is ln e^V_{chosen} - ln \sum_i e^{V_i} by log rules, which further
+    # simplifies to V_{chosen} - ln \sum_i e^{V_i}. LogSumExp uses various tricks to
+    # calculate the logsum directly without overflow, and then we just subtract from the chosen utility.
+    chosen_util - value(logsum)
 end
 
 function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_cols, data, parameters::Vector{T}) where T
@@ -170,7 +181,7 @@ McFadden's pseudo-R2 (relative to constants): $mcfadden
     vc = vcov(res)
     # nan variance in fixed params
     if !all(filter(x->!isnan(x), diag(vc)) .≥ 0)
-        @error "Some estimated variances are negative, not showing std. errors!"
+        @error "Some estimated variances are negative, not showing std. errors! Your model is likely not identified."
         ses = diag(vc)
         pval = fill(NaN, length(ses))
         selab = "Var"
