@@ -1,23 +1,16 @@
 # Replicate the Biogeme Swissmetro example
 # https://biogeme.epfl.ch/examples/swissmetro/01logit.html
 
-using Distributed
-procs = addprocs(4)
-Distributed.@everywhere begin
-    using Pkg; Pkg.activate(joinpath(@__DIR__, "..", ".."))
-end
+@testitem "Biogeme swissmetro distributed" begin
+    using Distributed
+    # clean up from prev. test runs
+    rmprocs(workers()...)
+    procs = addprocs(4)
+    
+    @everywhere using Dagger, DiscreteChoiceModels, Test, StatsBase
+    @everywhere import DTables: DTable    
 
-@everywhere using Dagger, DiscreteChoiceModels
-@everywhere import DTables: DTable
-
-@testset "Biogeme swissmetro distributed" begin
-    using Dagger
-    using DiscreteChoiceModels
-    using Test
-    using StatsBase
     using CSV
-    import DTables: DTable
-
 
     @test length(workers()) == 4
 

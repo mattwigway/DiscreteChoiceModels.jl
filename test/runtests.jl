@@ -1,15 +1,5 @@
 # Run tests
 
-using SafeTestsets, Test, DiscreteChoiceModels, MacroTools, OnlineStats, CSV, DataFrames, StatsBase
+using TestItemRunner
 
-@testset "Mixed logit" begin
-    include("mixed/mixed.jl")
-end
-
-@testset "Multinomial logit" begin
-    include("mnl/mnl.jl")
-end
-
-@testset "Macros" begin
-    include("macro.jl")
-end
+@run_package_tests
