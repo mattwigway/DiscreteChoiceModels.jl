@@ -51,7 +51,7 @@ function mixed_ll_group(group, rownumber, groupnumber, params::Vector{T}, random
             end
 
             for (choiceidx, ufunc) in enumerate(utility_functions)
-                util = if isnothing(avail_cols) || extract_namedtuple_bool(row, @inbounds Val(avail_cols[choiceidx]))
+                util = if isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
                     # choice is available, either implicitly or explicitly
                     ufunc(params, row, mixed_values)
                 else
