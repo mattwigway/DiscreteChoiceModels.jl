@@ -2,8 +2,6 @@
 Estimation routines for a mixed logit model.
 =#
 
-using Infiltrator
-
 struct MixedLogitModel <: LogitModel
     coefnames::Vector{Symbol}
     coefs::Vector{Float64}
