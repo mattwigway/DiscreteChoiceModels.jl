@@ -1,5 +1,5 @@
 @testitem "Apollo route choice" begin
-    using CSV, DataFrames, Distributions
+    using CSV, DataFrames, Distributions, StatsBase
 
     in_confint(coef, coef2, se2) = coef > coef2 - 1.96 * se2 && coef < coef2 + 1.96 * se2
 
