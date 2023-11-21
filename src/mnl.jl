@@ -22,6 +22,9 @@ function extract_namedtuple_bool(nt, ::Val{key})::Bool where key
 end
 
 #=
+This directly calculate the loglikelihood for a single row, working in logarithmic space throughout to avoid overflows
+    (h/t Sam Zhang).
+
 Much work has gone into optimizing this to have zero allocations. Key optimizations:
 - chosen_col is passed as a Val, so the column name is dispatched on. This means that the compiler knows which
   column will be used for chosen at compile time, and since it knows column types (from the type of NamedTuple row)
@@ -33,7 +36,7 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols, ::Val{n_alts})::T where {T <: Number, chosen_col, n_alts}
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
     chosen = row[chosen_col]
 
     logsum = LogSumExp(T)
@@ -51,9 +54,9 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
                 chosen_util = util
             end
         end
-
-        found_chosen || error("Chosen value not available")
     end
+
+    found_chosen || error("Chosen value not available. Row: $row")
 
     # calculate log-probability directly, no numerical errors
     chosen_util - value(logsum)
@@ -65,10 +68,9 @@ function multinomial_logit_log_likelihood(utility_functions, chosen_col, avail_c
     U = typeof(utility_functions)
     C = typeof(chosen_col)
     A = typeof(avail_cols)
-    N = Val(length(utility_functions))
     rowwise_loglik(
-        FunctionWrapper{T, Tuple{R, Vector{T}, U, C, A, typeof(N)}}(mnl_ll_row),
-        data, parameters, utility_functions, chosen_col, avail_cols, N)
+        FunctionWrapper{T, Tuple{R, Vector{T}, U, C, A}}(mnl_ll_row),
+        data, parameters, utility_functions, chosen_col, avail_cols)
 end
 
 function multinomial_logit(
