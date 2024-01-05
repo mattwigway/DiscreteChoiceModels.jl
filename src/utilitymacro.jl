@@ -4,9 +4,28 @@ using MacroTools: postwalk, @capture
 # symbols that should not be interpreted as variable names - must be a better way to do this
 const RESERVED_SYMBOLS = Set([:+, :*, :/, :-, :^, :(==), :(!=), :<, :>, :(<=), :(>=), :≤, :≥])
 
-iscoef(coef::Symbol) = startswith(String(coef), r"[βα]")
+# sentinel value for an alternative or nest that is not a part of any other nest
+const TOP_LEVEL_NEST = -1
+
+iscoef(coef) = coef isa Symbol && startswith(String(coef), r"[βαθ]")
 getcoef(coef::QuoteNode) = getcoef(coef.value)
 getcoef(coef::Symbol) = iscoef(coef) ? coef : error("unable to parse coef $coef")
+
+"Parse the nesting structure (specified as pairs of nest => [alt, alt] or nest => [nest => [alt, alt], alt]) etc."
+function parse_nesting_structure!(ex, nests, alt_numbers)
+    @capture(ex, nest_ => [alternatives__]) || error("Malformed nesting structure")
+    nestidx = alt_numbers[nest]
+
+    for alternative ∈ alternatives
+        # is it a nested nest (i.e. subnest?)
+        if @capture(alternative, subnest_ => alts_)
+            nests[alt_numbers[subnest]] = nestidx
+            parse_nesting_structure!(alternative, nests, alt_numbers)
+        else
+            nests[alt_numbers[alternative]] = nestidx
+        end
+    end
+end
 
 #=
 define a utility function like so:
@@ -29,6 +48,11 @@ macro utility(ex::Expr)
     starting_values = Vector{Float64}()
     coef_indices = Dict{Symbol, Int64}()
     fixed_coefs = Dict{Symbol, Number}()
+    
+    # What nest each alternative is a part of
+    # Alternative numbers and nest numbers are the same thing. So you might have alternative 4,
+    # which is a member of nest (alternative) 3 and contains alternatives 5 and 6
+    local nests::Vector{Int64}
 
     # coefficients that require simulation
     mixed_coefs = Vector{Expr}()
@@ -38,7 +62,7 @@ macro utility(ex::Expr)
 
     postwalk(ex) do subex
         if @capture(subex, coefnode_ = starting_val_)
-            (coefnode isa Symbol) && (startswith(String(coefnode), r"[αβ]")) || error("Coefficient name expected, but $coefnode found. Maybe you used = instead of ~ when defining a utility function?")
+            iscoef(coefnode) || error("Coefficient name expected, but $coefnode found. Maybe you used = instead of ~ when defining a utility function?")
             coef = getcoef(coefnode)
             (haskey(coef_indices, coef) || haskey(fixed_coefs, coef) || haskey(mixed_coefindices, coef)) &&
                 error("Coef $coef defined multiple times")
@@ -166,6 +190,37 @@ macro utility(ex::Expr)
         return subex
     end
 
+    # parse nesting structure
+    nests = fill(TOP_LEVEL_NEST, length(util_funcs))
+
+    postwalk(ex) do subex
+        if @capture(subex, _ => _)
+            parse_nesting_structure!(subex, nests, alt_numbers)
+        end
+
+        return subex
+    end
+
+    alt_names = Dict(values(alt_numbers) .=> keys(alt_numbers))
+
+    # add inclusive value parameters for all nests
+    iv_param_indices = map(1:length(util_funcs)) do alt
+        # this alternative is a nest and not a leaf
+        if alt ∈ nests
+            iv_param_name = Symbol("θ$(alt_names[alt])")
+            if haskey(coef_indices, iv_param_name)
+                coef_indices[iv_param_name]
+            else
+                # start unspecified IV parameters at 1, i.e. multinomial logit
+                push!(starting_values, one(eltype(starting_values)))
+                push!(coefnames, iv_param_name)
+                length(starting_values)
+            end
+        else
+            TOP_LEVEL_NEST # no IV param
+        end
+    end
+
     # TODO some kind of error checking that there aren't other expressions that people meant to be
     # utility function or coefficient definitions, but didn't parse correctly
 
@@ -191,12 +246,16 @@ macro utility(ex::Expr)
             mixed_levels=$mixed_levels,
             # cannot interpolate symbol directly or it will try to be looked up
             # https://stackoverflow.com/questions/48272986
-            groupcol=$(groupcol isa Symbol ? Meta.quot(groupcol) : groupcol)
+            groupcol=$(groupcol isa Symbol ? Meta.quot(groupcol) : groupcol),
+            nests=$nests,
+            iv_param_indices=$iv_param_indices
         )
     end
 end
 
-# return a copy of the passed utility object that 
+# return a copy of the passed utility object that
+# TODO for MNL, don't need to optimize - can just calculate with base rates
+# TODO how to handle with nested logit? Allow nesting structure or no?
 function constant_utility(utility)
     coefnames = fill(:unnamed, length(utility.alt_numbers) - 1)
     for (k, v) in utility.alt_numbers
