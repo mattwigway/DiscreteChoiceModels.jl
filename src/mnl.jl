@@ -204,4 +204,4 @@ McFadden's pseudo-R2 (relative to constants): $mcfadden
     return header * table
 end
 
-multinomial_logit(NamedTuple) = error("Not enough arguments. Make sure arguments to @utility are enclosed in parens")
+multinomial_logit(::NamedTuple) = error("Not enough arguments. Make sure arguments to @utility are enclosed in parens")
