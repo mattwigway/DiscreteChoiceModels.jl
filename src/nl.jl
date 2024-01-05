@@ -206,3 +206,82 @@ function nested_logit(
     # TODO this nests parameter is not what we ultimately want, it still uses alternative codes
     return NestedLogitModel(final_coefnames, final_coefs, vcov, init_ll, NaN, final_ll, utility, availability)
 end
+
+function Base.summary(res::NestedLogitModel)
+    header = """
+Nested logit model
+Initial log-likelhood (at starting values): $(res.init_ll)
+Final log-likelihood: $(loglikelihood(res))
+"""
+
+    vc = vcov(res)
+    # nan variance in fixed params
+    if !all(filter(x->!isnan(x), diag(vc)) .≥ 0)
+        @error "Some estimated variances are negative, not showing std. errors! Your model is likely not identified."
+        ses = diag(vc)
+        pval = fill(NaN, length(ses))
+        selab = "Var"
+    else
+        ses = sqrt.(diag(vc))
+        pval = coef(res) ./ ses
+        selab = "Std. Err."
+    end
+
+    data = hcat(
+        coefnames(res),
+        coef(res),
+        ses,
+        pval
+    )
+
+    table = pretty_table(String, data, header=["", "Coef", selab, "Z-stat"],
+        header_crayon=crayon"yellow bold", formatters=ft_printf("%.5f", 2:4))
+
+    nesting_structure = draw_nesting_structure(res.utility)
+
+    return header * table * "\nNesting structure:\n" * nesting_structure
+end
+
+function get_nesting_structure(utility, _from)
+    if _from ∉ utility.nests
+        return nothing
+    end
+
+    nesting_structure = Vector{Any}()
+    for (alt, idx) in pairs(utility.alt_numbers)
+        if utility.nests[idx] == _from
+            subnests = get_nesting_structure(utility, idx)
+            if isnothing(subnests)
+                push!(nesting_structure, alt)
+            else
+                push!(nesting_structure, alt => subnests)
+            end
+        end
+    end
+
+    return nesting_structure
+end
+
+function _draw_nesting_structure!(structure, indent_level, buff)
+    for nest in structure
+        for _ in 1:indent_level
+            print(buff, "  ")
+        end
+
+        if nest isa Pair
+            println(buff, "- $(nest[1])")
+            _draw_nesting_structure!(nest[2], indent_level + 1, buff)
+        else
+            println(buff, "- $nest")
+        end
+    end
+end
+
+function draw_nesting_structure(utility)
+    structure = get_nesting_structure(utility, TOP_LEVEL_NEST)
+    buff = IOBuffer()
+    _draw_nesting_structure!(structure, 0, buff)
+    return String(take!(buff))
+end
+
+nested_logit(::NamedTuple) = error("Not enough arguments. Make sure arguments to @utility are enclosed in parens")
