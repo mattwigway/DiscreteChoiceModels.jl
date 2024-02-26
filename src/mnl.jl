@@ -89,7 +89,9 @@ function multinomial_logit(
     include_ll_const=true
     )
 
-    isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")    
+    isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")
+    
+    check_utility(utility, data)
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
     row_type = rowtype(data)
