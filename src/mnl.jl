@@ -21,6 +21,8 @@ function extract_namedtuple_bool(nt, ::Val{key})::Bool where key
     nt[key]::Bool
 end
 
+isavail(row, ::Val{avail_col}) where {avail_col} = row[avail_col]::Bool
+
 #=
 This directly calculate the loglikelihood for a single row, working in logarithmic space throughout to avoid overflows
     (h/t Sam Zhang).
@@ -44,7 +46,7 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
     chosen_util = zero(T)
     found_chosen = false
     for (choiceidx, ufunc) in enumerate(utility_functions)
-        avail = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
+        avail = isnothing(avail_cols) || isavail(row, Val(avail_cols[choiceidx]))
         if avail
             util = ufunc(params, row, nothing)
             fit!(logsum, util)
