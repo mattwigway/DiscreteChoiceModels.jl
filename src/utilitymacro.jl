@@ -194,7 +194,7 @@ macro utility(ex::Expr)
     nests = fill(TOP_LEVEL_NEST, length(util_funcs))
 
     postwalk(ex) do subex
-        if @capture(subex, _ => _)
+        if @capture(subex, _ => [__])
             parse_nesting_structure!(subex, nests, alt_numbers)
         end
 
