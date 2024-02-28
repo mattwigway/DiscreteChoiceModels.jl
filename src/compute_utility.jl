@@ -103,24 +103,26 @@ function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, 
 end
 =#
 
+"""
+Compute log-likelihood rowwise for a DataFrame, using multiple threads if available. This works by splitting
+the table into one chunk per thread, and running the likelihood calculation on each chunk. It does this
+rather than using an off-the-shelf parallel mapreduce (e.g. ThreadsX or FLoops) to avoid allocations, as
+SplittablesBase.halve(NamedTupleIterator) causes a lot of allocations (I'm not quite sure how, but it seems to
+copy the full dataset). This is tested and speeds computation on large models by roughly an order of magnitude.
+"""
 function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, args...)::T where T <: Number
-    #mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(table), init=zero(T))::T
+    chunksize_per_thread = nrow(table) ÷ Threads.nthreads() + 1
 
-    #loglik_for_row!(f, out, r, params, args...) = out[Threads.threadid()] += f(r, params, args...)
-
-    #reduce(+, asyncmap(r -> loglik_for_row(r, params, args...), Tables.namedtupleiterator(table)); init=zero(T))
-
-    @floop ThreadedEx() for row in Tables.namedtupleiterator(table)
-        ll_row = loglik_for_row(row, params, args...)::T
-        @reduce(ll += ll_row)
+    start = 1
+    thread_ll = @sync map(1:Threads.nthreads()) do _
+        subdf = Tables.namedtupleiterator(@view table[start:min(start + chunksize_per_thread - 1, nrow(table)),:])
+        start += chunksize_per_thread
+        Threads.@spawn mapreduce(r -> loglik_for_row(r, params, args...), +, $subdf, init=zero(T))
     end
 
-    ll
-end
+    @assert start > nrow(table)
 
-function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
-    # make the vector the same as the element type of params so ForwardDiff works
-    mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.rows(table), init=zero(T))::T
+    sum(fetch.(thread_ll))
 end
 
 #=
