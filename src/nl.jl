@@ -37,16 +37,16 @@ function get_scaled_emu(row, params::Vector{T}, iv_param_indices, utility_functi
     end
 
     # This directly stores ln Σ exp(V / θ)
-    emu = LogSumExp(T)
+    emu = ImmutableLogSumExp(T)
 
     θ = params[iv_param_indices[nest]]
 
     for (choiceidx, ufunc, other_nest) in zip(1:length(utility_functions), utility_functions, nests)
-        avail = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
+        avail = isnothing(avail_cols) || gettyped(row, Val(avail_cols[choiceidx]), Bool)
         if avail && other_nest == nest
             util = ufunc(params, row, nothing) + get_scaled_emu(row, params, iv_param_indices, utility_functions, nests, avail_cols, choiceidx)
             util /= θ
-            fit!(emu, util)
+            emu = update(emu, util)
         end
     end
 
@@ -79,18 +79,18 @@ function nl_logprob(row, params::Vector{T}, utility_functions, nests, iv_param_i
             one(T)
         end
 
-        logsum = LogSumExp(T)
+        logsum = ImmutableLogSumExp(T)
 
         # calculate the log-probability for this nest/alternative, conditional on the parent
         local chosen_util::T
         found_chosen = false
         for alt in 1:length(utility_functions)
-            avail = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[alt]))
+            avail = isnothing(avail_cols) || gettyped(row, Val(avail_cols[alt]), Bool)
             if avail && nests[alt] == nest
                 # this alternative/nest is in the same nest, calculate its utility
                 util = utility_functions[alt](params, row, nothing) + get_scaled_emu(row, params, iv_param_indices, utility_functions, nests, avail_cols, alt)
                 util /= θ
-                fit!(logsum, util)
+                logsum = update(logsum, util)
                 if alt == current
                     found_chosen = true
                     chosen_util = util
