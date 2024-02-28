@@ -17,11 +17,33 @@ extract_val(::Val{T}) where T = T
 # why does this get wrapped in an extra type?
 extract_val(::Type{Val{T}}) where T = T
 
-function extract_namedtuple_bool(nt, ::Val{key})::Bool where key
-    nt[key]::Bool
+"""
+This extracts a particular column from a row of a table, in a type stable manner. For some reason,
+when working with a DTable, row[col] is type unstable even if the column name is known at compile time.
+However, row.col is stable. gettyped is a generated function that takes advantage of this. 
+gettyped(row, Val(col), T) is rewritten to row.col::T, which is type stable.
+"""
+@generated function gettyped(row, ::Val{col}, T)::T where col
+    quote
+        row.$col::T
+    end
 end
 
-isavail(row, ::Val{avail_col}) where {avail_col} = row[avail_col]::Bool
+@generated function get_availability(row, ::Val{avail_cols}, i)::Bool where avail_cols
+    exprs = Expr[]
+
+    for i2 in eachindex(avail_cols)
+        push!(exprs, quote
+            if i == $i2
+                return row.$(avail_cols[i2])::Bool
+            end
+        end)
+    end
+
+    push!(exprs, :(error("Invalid choice index!")))
+
+    Expr(:block, exprs...)
+end
 
 #=
 This directly calculate the loglikelihood for a single row, working in logarithmic space throughout to avoid overflows
@@ -38,18 +60,19 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
-    chosen = row[chosen_col]
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, ::Val{avail_cols})::T where {T <: Number, chosen_col, avail_cols}
+    chosen = gettyped(row, Val(chosen_col), Int64)
 
-    logsum = LogSumExp(T)
+    logsum::ImmutableLogSumExp{T} = ImmutableLogSumExp(T)
 
-    chosen_util = zero(T)
+    chosen_util::T = zero(T)
     found_chosen = false
     for (choiceidx, ufunc) in enumerate(utility_functions)
-        avail = isnothing(avail_cols) || isavail(row, Val(avail_cols[choiceidx]))
+        avail = isnothing(avail_cols) || get_availability(row, Val(avail_cols), choiceidx)
+
         if avail
-            util = ufunc(params, row, nothing)
-            fit!(logsum, util)
+            util::T = ufunc(params, row, nothing)
+            logsum = update(logsum, util)
 
             if chosen == choiceidx
                 found_chosen = true
@@ -58,7 +81,9 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
         end
     end
 
-    found_chosen || error("Chosen value not available. Row: $row")
+    if !found_chosen
+        error("Chosen value not available. Row: $row")
+    end
 
     # calculate log-probability directly, no numerical errors
     # the probability is e^V_{chosen} / \sum_i e^{V_i}, i, chosen ∈ available.

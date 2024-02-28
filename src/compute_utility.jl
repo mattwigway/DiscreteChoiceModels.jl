@@ -28,7 +28,7 @@ end
 # indicates availability for each numbered choice
 function index_availability(availability, alt_numbers)
     if isnothing(availability)
-        avail_cols = nothing
+        nothing
     else
         avail_cols = convert(Vector{Union{Missing, keytype(alt_numbers)}}, fill(missing, length(alt_numbers)))
         for (alt, avail_col) in availability
@@ -38,9 +38,8 @@ function index_availability(availability, alt_numbers)
         end
 
         any(ismissing.(avail_cols)) && error("incomplete availability matrix")
+        tuple(avail_cols...)
     end
-
-    return avail_cols
 end
 
 # TODO change signature to generic Tables.jl table

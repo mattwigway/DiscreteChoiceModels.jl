@@ -47,6 +47,7 @@ function SplittablesBase.halve(x::Tables.RowIterator)
         len = cld(length(x), 2)
         return (Tables.RowIterator(columns(x), len), Tables.RowIterator(columns(x), length(x) - len))
     end
+    # this is copying the whole table!
     cs = map(SplittablesBase.halve, Tables.columns(x))
     lefts = map(first, cs)
     rights = map(last, cs)
@@ -164,3 +165,46 @@ end
 =#
 
 #length(table::DTable) = fetch(reduce(+, map(r -> (unity=1,), table))).unity
+
+
+struct ImmutableLogSumExp{T<:Number}
+    r::T
+    α::T
+    n::Int
+end
+
+function ImmutableLogSumExp(T::Type = Float64)
+    ImmutableLogSumExp{T}(zero(T), T(-Inf), 0)
+end
+
+function update(o::ImmutableLogSumExp{T}, x) where {T}
+    n = o.n + 1
+    α = o.α
+    r = o.r
+    if x <= α
+        r += exp(x - α)
+    else
+        r *= exp(α - x)
+        r += one(T)
+        α = x
+    end
+
+    ImmutableLogSumExp{T}(r, α, n)
+end
+
+value(o::ImmutableLogSumExp) = log(o.r) + o.α
+nobs(o::ImmutableLogSumExp) = o.n
+
+macro noallocate(code)
+    quote
+        a = @allocated res = begin
+            $(esc(code))
+        end
+
+        if a > 0
+            error("Expect no allocations but allocated $a bytes")
+        end
+
+        res
+    end
+end
