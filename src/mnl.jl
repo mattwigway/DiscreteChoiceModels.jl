@@ -124,7 +124,7 @@ function multinomial_logit(
     row_type = rowtype(data)
     obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(
         FunctionWrapper{T, Tuple{Vector{T}, row_type, Nothing}}.(utility.utility_functions),
-        Val(choice_col), avail_cols, data, p)::T
+        Val(choice_col), Val(avail_cols), data, p)::T
     init_ll = -obj(utility.starting_values)
 
     @info "Log-likelihood at starting values $(init_ll)"
