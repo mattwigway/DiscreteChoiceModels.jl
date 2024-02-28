@@ -115,14 +115,22 @@ function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, arg
 
     start = 1
     thread_ll = @sync map(1:Threads.nthreads()) do _
-        subdf = Tables.namedtupleiterator(@view table[start:min(start + chunksize_per_thread - 1, nrow(table)),:])
-        start += chunksize_per_thread
-        Threads.@spawn mapreduce(r -> loglik_for_row(r, params, args...), +, $subdf, init=zero(T))
+        # start > nrow(table) is rare but can happen when there are fewer observations than threads
+        # either your model is not going to be very good, or you should share your computational
+        # resources with me.
+        # @view seems to just return an empty table in this case, but I don't want to depend on that behavior.
+        if start ≤ nrow(table)
+            subdf = Tables.namedtupleiterator(@view table[start:min(start + chunksize_per_thread - 1, nrow(table)),:])
+            start += chunksize_per_thread
+            Threads.@spawn mapreduce(r -> loglik_for_row(r, params, args...), +, $subdf, init=zero(T))
+        else
+            nothing
+        end
     end
 
     @assert start > nrow(table)
 
-    sum(fetch.(thread_ll))
+    sum(fetch.(filter(x -> !isnothing(x), thread_ll)))
 end
 
 #=
