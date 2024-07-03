@@ -3,7 +3,9 @@ module DiscreteChoiceModels
 using OnlineStats, Tables, Printf, Statistics, LinearAlgebra, DataFrames, Dagger, ForwardDiff, FLoops, SplittablesBase,
     Distributions, HaltonSequences, Primes, Logging
 import FunctionWrappers: FunctionWrapper
+import ThreadsX, Dates
 import DTables: DTable
+import DelimitedFiles: writedlm
 
 include("LogitModel.jl")
 include("util.jl")
@@ -15,6 +17,7 @@ include("nl.jl")
 include("mixed_logit.jl")
 include("compute_utility.jl")
 include("check_utility.jl")
+include("logging.jl")
 
 export multinomial_logit, mixed_logit, nested_logit, @utility, @β, @dummy_code
 

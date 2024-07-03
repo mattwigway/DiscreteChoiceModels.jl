@@ -130,11 +130,19 @@ function nested_logit(
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
     method=BFGS(),
     se=true,
-    verbose=:no,
+    verbose=false,
     iterations=1_000,
     include_ll_const=true,
-    allow_convergence_failure=false
+    allow_convergence_failure=false,
+    logfile=nothing
     )
+
+    # backwards-compatibility
+    if verbose == :no
+        verbose = false
+    elseif verbose == :high || verbose == :medium
+        verbose = true
+    end
 
     isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in nested logit model")
     !all(utility.nests .== TOP_LEVEL_NEST) || @warn "No nests in nested logit model, it is equivalent to multinomial logit but less computationally efficient"
@@ -149,12 +157,26 @@ function nested_logit(
 
     @info "Log-likelihood at starting values $(init_ll)"
 
+    logio = if !isnothing(logfile)
+        open(logfile, "w")
+    else
+        nothing
+    end
+
+    if !isnothing(logio)
+        write_log_header(logio, utility)
+    end
+
     results = optimize(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
         copy(utility.starting_values),
         method,
-        Optim.Options(show_trace=verbose == :medium || verbose == :high, extended_trace=verbose==:high, iterations=iterations)
+        Optim.Options(extended_trace=true, iterations=iterations, callback=state -> iteration_callback(logio, verbose, state))
     )
+
+    if !isnothing(logio)
+        close(logio)
+    end
 
     if !Optim.converged(results)
         if allow_convergence_failure
