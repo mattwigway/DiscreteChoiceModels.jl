@@ -60,12 +60,18 @@ macro utility(ex::Expr)
     mixed_coefindices = Dict{Symbol, Int64}()
     mixed_levels = Vector{Union{Symbol, Nothing}}() # this contains the level of aggregation
 
+    # used to make sure no starting values were specified for coefficients not in model
+    coefs_with_specified_starting_values = Symbol[]
+    coefs_in_model = Symbol[]
+
     postwalk(ex) do subex
         if @capture(subex, coefnode_ = starting_val_)
             iscoef(coefnode) || error("Coefficient name expected, but $coefnode found. Maybe you used = instead of ~ when defining a utility function?")
             coef = getcoef(coefnode)
             (haskey(coef_indices, coef) || haskey(fixed_coefs, coef) || haskey(mixed_coefindices, coef)) &&
                 error("Coef $coef defined multiple times")
+
+            push!(coefs_with_specified_starting_values, coef)
 
             if @capture(starting_val, (fixed_value_, fixed))
                 # fixed coefficient
@@ -148,6 +154,8 @@ macro utility(ex::Expr)
             parsed_rhs = postwalk(rhs) do x
                 if x isa Symbol
                     if iscoef(x)
+                        push!(coefs_in_model, x)
+
                         # convert :coef to coefs - either references into the params array for
                         # non-fixed coefs, or literal values for fixed coefs
                         if haskey(fixed_coefs, x)
@@ -208,6 +216,9 @@ macro utility(ex::Expr)
         # this alternative is a nest and not a leaf
         if alt ∈ nests
             iv_param_name = Symbol("θ$(alt_names[alt])")
+
+            push!(coefs_in_model, iv_param_name)
+
             if haskey(coef_indices, iv_param_name)
                 coef_indices[iv_param_name]
             else
@@ -231,6 +242,11 @@ macro utility(ex::Expr)
         groupcols = unique(filter(x -> !isnothing(x), mixed_levels))
         length(groupcols) == 1 || error("Multiple levels of aggregation not supported!")
         first(groupcols)
+    end
+
+    if !all(coefs_with_specified_starting_values .∈ Ref(coefs_in_model))
+        coefs_not_in_model = filter(x -> x ∉ coefs_in_model, coefs_with_specified_starting_values)
+        error("Some coefficients have starting values specified but are not used in model: $(join(coefs_not_in_model, ", "))")
     end
 
     return quote
