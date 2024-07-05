@@ -111,10 +111,18 @@ function multinomial_logit(
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
     method=BFGS(),
     se=true,
-    verbose=:no,
+    verbose=false,
     iterations=1_000,
+    logfile=nothing,
     include_ll_const=true
     )
+
+    # backwards-compatibility
+    if verbose == :no
+        verbose = false
+    elseif verbose == :high || verbose == :medium
+        verbose = true
+    end
 
     isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")
     
@@ -133,6 +141,7 @@ function multinomial_logit(
         @info "Calculating log-likelihood at constants"
         util_const = constant_utility(utility)
         # Loglikelihood at constants for a mixed logit is just a multinomial logit
+        # TODO this is actually much simpler - ll at constants is just predicting base rates
         const_model = with_logger(NullLogger()) do
             multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false, include_ll_const=false)
         end
@@ -143,12 +152,26 @@ function multinomial_logit(
         NaN
     end
 
+    logio = if !isnothing(logfile)
+        open(logfile, "w")
+    else
+        nothing
+    end
+
+    if !isnothing(logio)
+        write_log_header(logio, utility)
+    end
+
     results = optimize(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
         copy(utility.starting_values),
         method,
-        Optim.Options(show_trace=verbose == :medium || verbose == :high, extended_trace=verbose==:high, iterations=iterations)
+        Optim.Options(extended_trace=true, iterations=iterations, callback=state -> iteration_callback(logio, verbose, state))
     )
+
+    if !isnothing(logio)
+        close(logio)
+    end
 
     if !Optim.converged(results)
         #@error "Failed to converge!"
