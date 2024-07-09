@@ -27,7 +27,7 @@ returns a value multiplied by that inclusive value parameter.
 Because we treat nests and elemental alternatives the same, if you request a "nest" that is actually just an alternative,
 we return a scaled emu of zero.
 
-In the Ben-Akiva and Lerman book, they do not have a Γ; instead they have a μ. Γ = 1 / μ; with this change the
+In the Ben-Akiva and Lerman book, they do not have a θ; instead they have a μ. θ = 1 / μ; with this change the
 formulations are equivalent.
 """
 function get_scaled_emu(row, params::Vector{T}, iv_param_indices, utility_functions, nests, avail_cols, nest) where T
@@ -55,7 +55,7 @@ function get_scaled_emu(row, params::Vector{T}, iv_param_indices, utility_functi
     # Note: this is going to be -Inf if there is a nest where nothing is available
     scaled_emu = value(emu) * θ
 
-    isfinite(scaled_emu) || error("non-finite scaled expected maximum utility (θΓ) at nest $nest, Γ=$(ForwardDiff.value(value(emu))), θ=$(ForwardDiff.value(iv_param)), row $row")
+    isfinite(scaled_emu) || error("non-finite scaled expected maximum utility (θΓ) at nest $nest, Γ=$(ForwardDiff.value(value(emu))), θ=$(ForwardDiff.value(θ)), row $row")
 
     return scaled_emu
 end
