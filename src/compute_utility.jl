@@ -51,7 +51,10 @@ function prepare_data(table::DataFrame, chosen, alt_numbers, availability)
     choice_col = find_unused_prefix(output_table, "enumerated_choice")
 
     output_table[!, choice_col] = get.([alt_numbers], output_table[:, chosen], [-1])
-    any(output_table[!, choice_col] .== -1) && error("not all alternatives appear in utility functions")
+    if any(output_table[!, choice_col] .== -1) 
+        missing_alts = unique(output_table[output_table[!, choice_col] .== -1, chosen])
+        error("Not all alternatives have utility functions. Missing alternatives: $missing_alts")
+    end
 
     avail_cols = index_availability(availability, alt_numbers)
     !isnothing(avail_cols) && check_availability(output_table, avail_cols, choice_col)
