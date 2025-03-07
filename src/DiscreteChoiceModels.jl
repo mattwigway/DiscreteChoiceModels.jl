@@ -17,7 +17,8 @@ include("mixed_logit.jl")
 include("compute_utility.jl")
 include("check_utility.jl")
 include("logging.jl")
+include("foreachchoice.jl")
 
-export multinomial_logit, mixed_logit, nested_logit, @utility, @β, @dummy_code
+export multinomial_logit, mixed_logit, nested_logit, @utility, @β, @dummy_code, @foreachchoice
 
 end

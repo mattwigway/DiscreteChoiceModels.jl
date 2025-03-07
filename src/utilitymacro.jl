@@ -40,6 +40,7 @@ Coefficients that are not defined will be treated as estimated with a starting v
 =#
 macro utility(ex::Expr)
     # inner macros are not parsed first, so expand all of them (e.g. @β)
+    # TODO what if called from a module other than main? Does it matter?
     ex = macroexpand(Main, ex)
 
     # first, extract coefficient definitions
