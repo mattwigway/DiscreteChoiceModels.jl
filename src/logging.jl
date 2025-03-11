@@ -40,3 +40,24 @@ function iteration_callback(io::Union{IO, Nothing}, verbose, optimstate)
     # continue iteration
     return false
 end
+
+"""
+    warm_start(utilities, logfile, iteration)
+
+Set starting values in a utility specification (created by @utility) based on a log file. 
+Specify an iteration to start from; negative numbers index from end.
+"""
+function warm_start!(utilities, logfile, iteration=-1)
+    log = CSV.read(logfile, DataFrame)
+
+    if iteration ≤ 0
+        # -1: last row, so need to add 1
+        iteration = nrow(log) + iteration + 1
+    end
+
+    for (i, name) ∈ enumerate(utilities.coefnames)
+        if String(name) ∈ names(log)
+            utilities.starting_values[i] = log[iteration, name]
+        end
+    end
+end

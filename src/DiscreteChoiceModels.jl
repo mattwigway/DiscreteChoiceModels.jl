@@ -5,6 +5,7 @@ using OnlineStats, Tables, Printf, Statistics, LinearAlgebra, DataFrames, Dagger
 import FunctionWrappers: FunctionWrapper
 import ThreadsX, Dates
 import DTables: DTable
+import CSV
 
 include("LogitModel.jl")
 include("util.jl")

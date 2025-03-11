@@ -114,7 +114,9 @@ function multinomial_logit(
     verbose=false,
     iterations=1_000,
     logfile=nothing,
-    include_ll_const=true
+    include_ll_const=true,
+    resume_from=nothing,
+    resume_from_iteration=-1
     )
 
     # backwards-compatibility
@@ -122,6 +124,12 @@ function multinomial_logit(
         verbose = false
     elseif verbose == :high || verbose == :medium
         verbose = true
+    end
+
+    if !isnothing(resume_from)
+        # set starting values from logfile
+        warm_start!(utility, resume_from, resume_from_iteration)
+        @info "Resuming from $resume_from iteration $resume_from_iteration:" Dict(utility.coefnames .=> utility.starting_values)
     end
 
     isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")
