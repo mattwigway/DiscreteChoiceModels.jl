@@ -116,7 +116,8 @@ function multinomial_logit(
     logfile=nothing,
     include_ll_const=true,
     resume_from=nothing,
-    resume_from_iteration=-1
+    resume_from_iteration=-1,
+    allow_convergence_failure=false
     )
 
     # backwards-compatibility
@@ -182,8 +183,11 @@ function multinomial_logit(
     end
 
     if !Optim.converged(results)
-        #@error "Failed to converge!"
-        throw(ConvergenceException(Optim.iterations(results)))
+        if allow_convergence_failure
+            @error "Failed to converge!"
+        else
+            throw(ConvergenceException(Optim.iterations(results)))
+        end
     else
         @info "Optimization converged successfully after $(Optim.iterations(results)) iterations"
     end
