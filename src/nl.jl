@@ -134,7 +134,9 @@ function nested_logit(
     iterations=1_000,
     include_ll_const=true,
     allow_convergence_failure=false,
-    logfile=nothing
+    logfile=nothing,
+    resume_from=nothing,
+    resume_from_iteration=-1
     )
 
     # backwards-compatibility
@@ -142,6 +144,12 @@ function nested_logit(
         verbose = false
     elseif verbose == :high || verbose == :medium
         verbose = true
+    end
+
+    if !isnothing(resume_from)
+        # set starting values from logfile
+        warm_start!(utility, resume_from, resume_from_iteration)
+        @info "Resuming from $resume_from iteration $resume_from_iteration:" Dict(utility.coefnames .=> utility.starting_values)
     end
 
     isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in nested logit model")
