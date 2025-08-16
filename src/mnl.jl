@@ -151,9 +151,9 @@ function multinomial_logit(
         util_const = constant_utility(utility)
         # Loglikelihood at constants for a mixed logit is just a multinomial logit
         # TODO this is actually much simpler - ll at constants is just predicting base rates
-        const_model = with_logger(NullLogger()) do
+        const_model = #with_logger(NullLogger()) do
             multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false, include_ll_const=false)
-        end
+        #end
         ll_const = loglikelihood(const_model)
         @info "Log-likelihood at constants: $(ll_const)"
         ll_const
