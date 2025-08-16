@@ -113,25 +113,23 @@ rather than using an off-the-shelf parallel mapreduce (e.g. ThreadsX or FLoops) 
 SplittablesBase.halve(NamedTupleIterator) causes a lot of allocations (I'm not quite sure how, but it seems to
 copy the full dataset). This is tested and speeds computation on large models by roughly an order of magnitude.
 """
-function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, args...)::T where T <: Number
-    chunksize_per_thread = nrow(table) ÷ Threads.nthreads() + 1
+function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, args...; chunks=Threads.nthreads())::T where T <: Number
+    chunksize_per_thread = nrow(table) ÷ chunks + 1
 
     start = 1
-    thread_ll = @sync map(1:Threads.nthreads()) do _
+    thread_ll = @sync map(1:chunks) do chunk
+        start = (chunk - 1) * chunksize_per_thread + 1
+        endd = min(chunk * chunksize_per_thread, nrow(table))
         # start > nrow(table) is rare but can happen when there are fewer observations than threads
         # either your model is not going to be very good, or you should share your computational
         # resources with me.
         # @view seems to just return an empty table in this case, but I don't want to depend on that behavior.
         if start ≤ nrow(table)
-            subdf = Tables.namedtupleiterator(@view table[start:min(start + chunksize_per_thread - 1, nrow(table)),:])
-            start += chunksize_per_thread
-            Threads.@spawn mapreduce(r -> loglik_for_row(r, params, args...), +, $subdf, init=zero(T))
+            Threads.@spawn mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(view(table, $start:$endd, :)), init=zero(T))
         else
             nothing
         end
     end
-
-    @assert start > nrow(table)
 
     sum(fetch.(filter(x -> !isnothing(x), thread_ll)))
 end
