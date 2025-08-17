@@ -117,7 +117,8 @@ function multinomial_logit(
     include_ll_const=true,
     resume_from=nothing,
     resume_from_iteration=-1,
-    allow_convergence_failure=false
+    allow_convergence_failure=false,
+    optimization_options=()
     )
 
     # backwards-compatibility
@@ -152,7 +153,7 @@ function multinomial_logit(
         # Loglikelihood at constants for a mixed logit is just a multinomial logit
         # TODO this is actually much simpler - ll at constants is just predicting base rates
         const_model = #with_logger(NullLogger()) do
-            multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false, include_ll_const=false)
+            multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false, include_ll_const=false, optimization_options=optimization_options)
         #end
         ll_const = loglikelihood(const_model)
         @info "Log-likelihood at constants: $(ll_const)"
@@ -175,7 +176,8 @@ function multinomial_logit(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
         copy(utility.starting_values),
         method,
-        Optim.Options(extended_trace=true, iterations=iterations, callback=state -> iteration_callback(logio, verbose, state))
+        Optim.Options(extended_trace=true, iterations=iterations, callback=state -> iteration_callback(logio, verbose, state);
+            optimization_options...)
     )
 
     if !isnothing(logio)
