@@ -10,7 +10,6 @@ struct MultinomialLogitModel <: LogitModel
     init_ll::Float64
     const_ll::Float64
     final_ll::Float64
-    # TODO log likelihood at constants
 end
 
 extract_val(::Val{T}) where T = T
@@ -185,13 +184,18 @@ function multinomial_logit(
     end
 
     if !Optim.converged(results)
-        if allow_convergence_failure
-            @error "Failed to converge!"
-        else
+        # store results for investigation
+        postmortem = "convergence-failure-$(uuid4()).jlobj"
+        serialize(postmortem, results)
+        @error "Model failed to converge after $(Optim.iterations(results)) iterations; serializing post-mortem results to $postmortem" results
+        if !allow_convergence_failure
             throw(ConvergenceException(Optim.iterations(results)))
         end
     else
         @info "Optimization converged successfully after $(Optim.iterations(results)) iterations"
+        if verbose
+            @info "Optimization results" results
+        end
     end
 
     @info """

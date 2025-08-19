@@ -136,7 +136,8 @@ function nested_logit(
     allow_convergence_failure=false,
     logfile=nothing,
     resume_from=nothing,
-    resume_from_iteration=-1
+    resume_from_iteration=-1,
+    optimization_options=()
     )
 
     # backwards-compatibility
@@ -179,7 +180,7 @@ function nested_logit(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
         copy(utility.starting_values),
         method,
-        Optim.Options(extended_trace=true, iterations=iterations, callback=state -> iteration_callback(logio, verbose, state))
+        Optim.Options(extended_trace=true, iterations=iterations, callback=state -> iteration_callback(logio, verbose, state); optimization_options...)
     )
 
     if !isnothing(logio)
@@ -194,6 +195,9 @@ function nested_logit(
         end
     else
         @info "Optimization converged successfully after $(Optim.iterations(results)) iterations"
+        if verbose
+            @info "Optimization results" results
+        end
     end
 
     @info """

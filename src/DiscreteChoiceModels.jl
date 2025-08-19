@@ -6,6 +6,8 @@ import FunctionWrappers: FunctionWrapper
 import ThreadsX, Dates
 import DTables: DTable
 import CSV
+import Serialization: serialize
+import UUIDs: uuid4
 
 include("LogitModel.jl")
 include("util.jl")
