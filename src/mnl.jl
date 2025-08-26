@@ -10,15 +10,38 @@ struct MultinomialLogitModel <: LogitModel
     init_ll::Float64
     const_ll::Float64
     final_ll::Float64
-    # TODO log likelihood at constants
 end
 
 extract_val(::Val{T}) where T = T
 # why does this get wrapped in an extra type?
 extract_val(::Type{Val{T}}) where T = T
 
-function extract_namedtuple_bool(nt, ::Val{key})::Bool where key
-    nt[key]::Bool
+"""
+This extracts a particular column from a row of a table, in a type stable manner. For some reason,
+when working with a DTable, row[col] is type unstable even if the column name is known at compile time.
+However, row.col is stable. gettyped is a generated function that takes advantage of this. 
+gettyped(row, Val(col), T) is rewritten to row.col::T, which is type stable.
+"""
+@generated function gettyped(row, ::Val{col}, T)::T where col
+    quote
+        row.$col::T
+    end
+end
+
+@generated function get_availability(row, ::Val{avail_cols}, i)::Bool where avail_cols
+    exprs = Expr[]
+
+    for i2 in eachindex(avail_cols)
+        push!(exprs, quote
+            if i == $i2
+                return row.$(avail_cols[i2])::Bool
+            end
+        end)
+    end
+
+    push!(exprs, :(error("Invalid choice index!")))
+
+    Expr(:block, exprs...)
 end
 
 #=
@@ -36,18 +59,19 @@ Much work has gone into optimizing this to have zero allocations. Key optimizati
 - Note that this was tested from a script calling multinomial_logit not inside a function, some of these optimizations may not be
   necessary inside a function.
 =#
-function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
-    chosen = row[chosen_col]
+function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}, ::Val{avail_cols})::T where {T <: Number, chosen_col, avail_cols}
+    chosen = gettyped(row, Val(chosen_col), Int64)
 
-    logsum = LogSumExp(T)
+    logsum::ImmutableLogSumExp{T} = ImmutableLogSumExp(T)
 
-    chosen_util = zero(T)
+    chosen_util::T = zero(T)
     found_chosen = false
     for (choiceidx, ufunc) in enumerate(utility_functions)
-        avail = isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
+        avail = isnothing(avail_cols) || get_availability(row, Val(avail_cols), choiceidx)
+
         if avail
-            util = ufunc(params, row, nothing)
-            fit!(logsum, util)
+            util::T = ufunc(params, row, nothing)
+            logsum = update(logsum, util)
 
             if chosen == choiceidx
                 found_chosen = true
@@ -56,7 +80,9 @@ function mnl_ll_row(row, params::Vector{T}, utility_functions, ::Val{chosen_col}
         end
     end
 
-    found_chosen || error("Chosen value not available. Row: $row")
+    if !found_chosen
+        error("Chosen value not available. Row: $row")
+    end
 
     # calculate log-probability directly, no numerical errors
     # the probability is e^V_{chosen} / \sum_i e^{V_i}, i, chosen ∈ available.
@@ -84,18 +110,38 @@ function multinomial_logit(
     availability::Union{Nothing, AbstractVector{<:Pair{<:Any, <:Any}}}=nothing,
     method=BFGS(),
     se=true,
-    verbose=:no,
+    verbose=false,
     iterations=1_000,
-    include_ll_const=true
+    logfile=nothing,
+    include_ll_const=true,
+    resume_from=nothing,
+    resume_from_iteration=-1,
+    allow_convergence_failure=false,
+    optimization_options=()
     )
 
-    isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")    
+    # backwards-compatibility
+    if verbose == :no
+        verbose = false
+    elseif verbose == :high || verbose == :medium
+        verbose = true
+    end
+
+    if !isnothing(resume_from)
+        # set starting values from logfile
+        warm_start!(utility, resume_from, resume_from_iteration)
+        @info "Resuming from $resume_from iteration $resume_from_iteration:" Dict(utility.coefnames .=> utility.starting_values)
+    end
+
+    isempty(utility.mixed_coefs) || error("Cannot have mixed coefs in multinomial logit model")
+    
+    check_utility(utility, data)
 
     data, choice_col, avail_cols = prepare_data(data, chosen, utility.alt_numbers, availability)
     row_type = rowtype(data)
     obj(p::AbstractVector{T}) where T = -multinomial_logit_log_likelihood(
         FunctionWrapper{T, Tuple{Vector{T}, row_type, Nothing}}.(utility.utility_functions),
-        Val(choice_col), avail_cols, data, p)::T
+        Val(choice_col), Val(avail_cols), data, p)::T
     init_ll = -obj(utility.starting_values)
 
     @info "Log-likelihood at starting values $(init_ll)"
@@ -104,9 +150,10 @@ function multinomial_logit(
         @info "Calculating log-likelihood at constants"
         util_const = constant_utility(utility)
         # Loglikelihood at constants for a mixed logit is just a multinomial logit
-        const_model = with_logger(NullLogger()) do
-            multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false, include_ll_const=false)
-        end
+        # TODO this is actually much simpler - ll at constants is just predicting base rates
+        const_model = #with_logger(NullLogger()) do
+            multinomial_logit(util_const, chosen, data, availability=availability, method=method, se=false, include_ll_const=false, optimization_options=optimization_options)
+        #end
         ll_const = loglikelihood(const_model)
         @info "Log-likelihood at constants: $(ll_const)"
         ll_const
@@ -114,18 +161,41 @@ function multinomial_logit(
         NaN
     end
 
+    logio = if !isnothing(logfile)
+        open(logfile, "w")
+    else
+        nothing
+    end
+
+    if !isnothing(logio)
+        write_log_header(logio, utility)
+    end
+
     results = optimize(
         TwiceDifferentiable(obj, utility.starting_values, autodiff=:forward),
         copy(utility.starting_values),
         method,
-        Optim.Options(show_trace=verbose == :medium || verbose == :high, extended_trace=verbose==:high, iterations=iterations)
+        Optim.Options(extended_trace=true, iterations=iterations, callback=state -> iteration_callback(logio, verbose, state);
+            optimization_options...)
     )
 
+    if !isnothing(logio)
+        close(logio)
+    end
+
     if !Optim.converged(results)
-        #@error "Failed to converge!"
-        throw(ConvergenceException(Optim.iterations(results)))
+        # store results for investigation
+        postmortem = "convergence-failure-$(uuid4()).jlobj"
+        serialize(postmortem, results)
+        @error "Model failed to converge after $(Optim.iterations(results)) iterations; serializing post-mortem results to $postmortem" results
+        if !allow_convergence_failure
+            throw(ConvergenceException(Optim.iterations(results)))
+        end
     else
         @info "Optimization converged successfully after $(Optim.iterations(results)) iterations"
+        if verbose
+            @info "Optimization results" results
+        end
     end
 
     @info """
@@ -204,4 +274,4 @@ McFadden's pseudo-R2 (relative to constants): $mcfadden
     return header * table
 end
 
-multinomial_logit(NamedTuple) = error("Not enough arguments. Make sure arguments to @utility are enclosed in parens")
+multinomial_logit(::NamedTuple) = error("Not enough arguments. Make sure arguments to @utility are enclosed in parens")

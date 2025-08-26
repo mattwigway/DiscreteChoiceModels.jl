@@ -17,6 +17,7 @@
         Pkg.activate($current_proj)
         using Distributed, Dagger, DiscreteChoiceModels, Test, StatsBase
         import DTables: DTable
+        import DataAPI: nrow
     end
 
     using CSV
@@ -35,7 +36,7 @@
         ((row.PURPOSE == 1) | (row.PURPOSE == 3)) && row.CHOICE != 0
     end
 
-    @test length(data) == 6768
+    @test nrow(data) == 6768
 
     data = map(data) do r
         merge((

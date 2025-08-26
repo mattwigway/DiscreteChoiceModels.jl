@@ -34,14 +34,14 @@ end
 
 function mixed_ll_group(group, rownumber, groupnumber, params::Vector{T}, random_coefs, utility_functions,
         ::Val{chosen_col}, avail_cols)::T where {T <: Number, chosen_col}
-    probsum = LogSumExp(T)
+    probsum = ImmutableLogSumExp(T)
 
     mixed_values = zeros(T, length(random_coefs))
 
     for draw in 1:ndraws(random_coefs)
         draw_prob = zero(T)
         for (i, row) in enumerate(Tables.namedtupleiterator(group))  # TODO some way to use namedtupleiterator without creating a new type each time?
-            logsum = LogSumExp(T)
+            logsum = ImmutableLogSumExp(T)
             local chosen_util::T
             chosen = row[chosen_col]
 
@@ -51,7 +51,7 @@ function mixed_ll_group(group, rownumber, groupnumber, params::Vector{T}, random
             end
 
             for (choiceidx, ufunc) in enumerate(utility_functions)
-                util = if isnothing(avail_cols) || extract_namedtuple_bool(row, Val(avail_cols[choiceidx]))
+                util = if isnothing(avail_cols) || gettyped(row, Val(avail_cols[choiceidx]), Bool)
                     # choice is available, either implicitly or explicitly
                     ufunc(params, row, mixed_values)
                 else
@@ -64,14 +64,14 @@ function mixed_ll_group(group, rownumber, groupnumber, params::Vector{T}, random
     
                 # we want to add the exponentiated utilities. But they may be 0 due to underflow. use logsumexp to add them,
                 # treating the utilities as the log of the xs to be added
-                fit!(logsum, util)
+                logsum = update(logsum, util)
             end
 
             # multiply all probabilities for the chooser together by summing log probabilities
             draw_prob += chosen_util - value(logsum)
         end
 
-        fit!(probsum, draw_prob)
+        probsum = update(probsum, draw_prob)
     end
 
     value(probsum) - log(ndraws(random_coefs))

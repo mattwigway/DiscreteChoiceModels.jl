@@ -28,7 +28,7 @@ end
 # indicates availability for each numbered choice
 function index_availability(availability, alt_numbers)
     if isnothing(availability)
-        avail_cols = nothing
+        nothing
     else
         avail_cols = convert(Vector{Union{Missing, keytype(alt_numbers)}}, fill(missing, length(alt_numbers)))
         for (alt, avail_col) in availability
@@ -38,9 +38,8 @@ function index_availability(availability, alt_numbers)
         end
 
         any(ismissing.(avail_cols)) && error("incomplete availability matrix")
+        tuple(avail_cols...)
     end
-
-    return avail_cols
 end
 
 # TODO change signature to generic Tables.jl table
@@ -52,7 +51,10 @@ function prepare_data(table::DataFrame, chosen, alt_numbers, availability)
     choice_col = find_unused_prefix(output_table, "enumerated_choice")
 
     output_table[!, choice_col] = get.([alt_numbers], output_table[:, chosen], [-1])
-    any(output_table[!, choice_col] .== -1) && error("not all alternatives appear in utility functions")
+    if any(output_table[!, choice_col] .== -1) 
+        missing_alts = unique(output_table[output_table[!, choice_col] .== -1, chosen])
+        error("Not all alternatives have utility functions. Missing alternatives: $missing_alts")
+    end
 
     avail_cols = index_availability(availability, alt_numbers)
     !isnothing(avail_cols) && check_availability(output_table, avail_cols, choice_col)
@@ -104,24 +106,32 @@ function prepare_data(table::JuliaDB.AbstractIndexedTable, chosen, alt_numbers, 
 end
 =#
 
-function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, args...)::T where T <: Number
-    #mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(table), init=zero(T))::T
+"""
+Compute log-likelihood rowwise for a DataFrame, using multiple threads if available. This works by splitting
+the table into one chunk per thread, and running the likelihood calculation on each chunk. It does this
+rather than using an off-the-shelf parallel mapreduce (e.g. ThreadsX or FLoops) to avoid allocations, as
+SplittablesBase.halve(NamedTupleIterator) causes a lot of allocations (I'm not quite sure how, but it seems to
+copy the full dataset). This is tested and speeds computation on large models by roughly an order of magnitude.
+"""
+function rowwise_loglik(loglik_for_row, table::DataFrame, params::Vector{T}, args...; chunks=Threads.nthreads())::T where T <: Number
+    chunksize_per_thread = nrow(table) ÷ chunks + 1
 
-    #loglik_for_row!(f, out, r, params, args...) = out[Threads.threadid()] += f(r, params, args...)
-
-    #reduce(+, asyncmap(r -> loglik_for_row(r, params, args...), Tables.namedtupleiterator(table)); init=zero(T))
-
-    @floop ThreadedEx() for row in Tables.namedtupleiterator(table)
-        ll_row = loglik_for_row(row, params, args...)::T
-        @reduce(ll += ll_row)
+    start = 1
+    thread_ll = @sync map(1:chunks) do chunk
+        start = (chunk - 1) * chunksize_per_thread + 1
+        endd = min(chunk * chunksize_per_thread, nrow(table))
+        # start > nrow(table) is rare but can happen when there are fewer observations than threads
+        # either your model is not going to be very good, or you should share your computational
+        # resources with me.
+        # @view seems to just return an empty table in this case, but I don't want to depend on that behavior.
+        if start ≤ nrow(table)
+            Threads.@spawn mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.namedtupleiterator(view(table, $start:$endd, :)), init=zero(T))
+        else
+            nothing
+        end
     end
 
-    ll
-end
-
-function rowwise_loglik(loglik_for_row, table, params::Vector{T}, args...)::T where T <: Number
-    # make the vector the same as the element type of params so ForwardDiff works
-    mapreduce(r -> loglik_for_row(r, params, args...), +, Tables.rows(table), init=zero(T))::T
+    sum(fetch.(filter(x -> !isnothing(x), thread_ll)))
 end
 
 #=
